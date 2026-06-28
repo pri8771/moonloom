@@ -281,7 +281,7 @@ Then proceed with the requested phase.
 ---
 
 ### MOONLOOM-PROMPT-001: Project Intake and Foundation
-**Date:** 2026-06-27 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E002 | **Status:** 📅 Queued
+**Date:** 2026-06-28 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E002 | **Status:** ✅ Used
 
 ```
 Implement Phase 1 for Moonloom: Idle Dream Factory.
@@ -331,6 +331,47 @@ Acceptance criteria:
 - Number formatter displays large values cleanly (1.23 K, 45.6 M, etc).
 - Project tracker, bug tracker, and prompt log updated.
 ```
+
+**Outcome (2026-06-28):** Foundation implemented as the `MoonloomApp/` Swift
+package + `MoonloomApp.xcodeproj` (Xcode 16, iOS 17, file-system synchronized
+groups; `project.yml` provided for XcodeGen regeneration).
+
+Delivered:
+- **App shell & navigation** — `@main MoonloomApp`, `AppContainer` (lightweight
+  DI + lifecycle), `RootView` 4-tab `TabView`: **Factory / Moon Restoration /
+  Shop / Settings**. (Acceptance: navigation between the four screens. The
+  documented Upgrades/Regions/Prestige destinations are folded into these four
+  per the latest foundation spec — Prestige lives on the Moon Restoration tab;
+  building purchases live on the Factory tab.)
+- **Central state** — `GameState` (`@MainActor ObservableObject`) holding 5
+  currencies, building counts, upgrade flags, moon restoration, prestige data,
+  and settings; with a `Codable`/`Sendable` `GameSnapshot` projection.
+- **Economy config** — `EconomyConfig` with all **12 production tiers**
+  (Whisper Nets → Moonheart Engine), exponential cost curve `baseCost·1.15^n`.
+- **Production engine** — `actor ProductionEngine` (0.1 s tick, delta-time from
+  an injected `TimeProvider` to avoid drift/double-tick — RISK-001/002).
+- **Offline earnings** — `OfflineEarningsCalculator` (cap + 0.5 efficiency,
+  TECHNICAL_PRD §5) with a "Welcome back" modal.
+- **Prestige** — `PrestigeCalculator` + `GameState.applyPrestige` (New Moon
+  Reset: zero soft currencies/buildings, keep Stardust/Lucid Shards/permanent
+  upgrades) and a confirmation flow.
+- **Persistence** — SwiftData `@Model` records (Currency/Building/Prestige/
+  Settings) behind a `@ModelActor` `GameStateRepository`; safe in-memory
+  fallback so a corrupt store can't crash launch.
+- **Services** — `NumberAbbreviator` (K/M/B/T/Qa…), `HapticsService`, and
+  documented, inert `AudioService` / `AnalyticsService` stubs.
+- **Tests** — XCTest suites for number formatting (incl. `1000→"1K"`,
+  `1e6→"1M"`, `1e12→"1T"`), offline earnings, prestige, economy, and GameState.
+
+Verification note: the build/test toolchain (`xcodebuild`/Xcode) is macOS-only
+and was **not available in this Linux session**, so the project was authored for
+correctness but `xcodebuild build`/`test` were not executed here. Run them on a
+macOS + Xcode 16 machine (commands in `MoonloomApp/README.md`). Tracked as
+BUG-001 (process note).
+
+Deferred (clearly isolated, safe stubs / later epics): live StoreKit purchasing,
+audio playback, local notifications, achievements, full story sequence,
+cosmetic theming.
 
 ---
 
@@ -788,10 +829,10 @@ Return:
 | Ideation (ChatGPT) | 2 | 2 | 0 |
 | Architecture | 2 | 0 | 2 |
 | Claude Code Universal | 1 | 0 | 1 |
-| Claude Code Implementation | 8 | 0 | 8 |
+| Claude Code Implementation | 8 | 1 | 7 |
 | Claude Code Audit | 1 | 0 | 1 |
-| **Total** | **14** | **2** | **12** |
+| **Total** | **14** | **3** | **11** |
 
 ---
 
-*Last updated: 2026-06-27 — ChatGPT implementation prompts added*
+*Last updated: 2026-06-28 — MOONLOOM-PROMPT-001 (foundation) implemented*

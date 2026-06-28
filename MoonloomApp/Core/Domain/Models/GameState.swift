@@ -1,0 +1,272 @@
+import Foundation
+import Combine
+
+/// Central, observable game state holding all currencies, building counts,
+/// upgrade flags, moon-restoration progress, prestige data, and settings.
+///
+/// This is the single source of truth the SwiftUI layer observes. It is
+/// `@MainActor`-isolated so all mutations happen on the main thread (and is
+/// therefore implicitly `Sendable`). Simulation math lives in the engine /
+/// use cases and is applied here through small, intention-revealing methods —
+/// views never mutate raw fields directly.
+@MainActor
+final class GameState: ObservableObject {
+
+    let config: EconomyConfig
+
+    // MARK: - Currencies
+    @Published private(set) var currencyAmounts: [ResourceType: Double]
+    @Published private(set) var currencyLifetimeEarned: [ResourceType: Double]
+
+    // MARK: - Buildings & upgrades
+    @Published private(set) var buildingCounts: [String: Int]
+    @Published private(set) var purchasedUpgradeIDs: Set<String>
+
+    // MARK: - Moon restoration & prestige
+    @Published private(set) var moonRestoration: Double      // 0.0 ... 1.0
+    @Published private(set) var resetCount: Int
+    @Published private(set) var totalLucidShardsEarned: Double
+    @Published private(set) var bestRunMoonlightRestored: Double
+    @Published private(set) var permanentUpgradeIDs: Set<String>
+
+    // MARK: - Settings
+    @Published var isMusicEnabled: Bool
+    @Published var isSFXEnabled: Bool
+    @Published var isNotificationsEnabled: Bool
+    @Published private(set) var offlineEarningCapHours: Int
+    @Published var theme: String
+
+    // MARK: - Timing
+    @Published private(set) var lastActiveTimestamp: Date
+
+    // MARK: - Init
+
+    init(config: EconomyConfig = EconomyConfig(), snapshot: GameSnapshot) {
+        self.config = config
+        self.currencyAmounts = Self.decodeCurrencies(snapshot.currencyAmounts)
+        self.currencyLifetimeEarned = Self.decodeCurrencies(snapshot.currencyLifetimeEarned)
+        self.buildingCounts = snapshot.buildingCounts
+        self.purchasedUpgradeIDs = Set(snapshot.purchasedUpgradeIDs)
+        self.moonRestoration = snapshot.moonRestoration
+        self.resetCount = snapshot.resetCount
+        self.totalLucidShardsEarned = snapshot.totalLucidShardsEarned
+        self.bestRunMoonlightRestored = snapshot.bestRunMoonlightRestored
+        self.permanentUpgradeIDs = Set(snapshot.permanentUpgradeIDs)
+        self.isMusicEnabled = snapshot.isMusicEnabled
+        self.isSFXEnabled = snapshot.isSFXEnabled
+        self.isNotificationsEnabled = snapshot.isNotificationsEnabled
+        self.offlineEarningCapHours = snapshot.offlineEarningCapHours
+        self.theme = snapshot.theme
+        self.lastActiveTimestamp = snapshot.lastActiveTimestamp
+    }
+
+    /// Overwrite all state from a snapshot in place (used after the async load
+    /// at launch, so the observed `GameState` instance stays stable and the view
+    /// tree is not torn down).
+    func restore(from snapshot: GameSnapshot) {
+        currencyAmounts = Self.decodeCurrencies(snapshot.currencyAmounts)
+        currencyLifetimeEarned = Self.decodeCurrencies(snapshot.currencyLifetimeEarned)
+        buildingCounts = snapshot.buildingCounts
+        purchasedUpgradeIDs = Set(snapshot.purchasedUpgradeIDs)
+        moonRestoration = snapshot.moonRestoration
+        resetCount = snapshot.resetCount
+        totalLucidShardsEarned = snapshot.totalLucidShardsEarned
+        bestRunMoonlightRestored = snapshot.bestRunMoonlightRestored
+        permanentUpgradeIDs = Set(snapshot.permanentUpgradeIDs)
+        isMusicEnabled = snapshot.isMusicEnabled
+        isSFXEnabled = snapshot.isSFXEnabled
+        isNotificationsEnabled = snapshot.isNotificationsEnabled
+        offlineEarningCapHours = snapshot.offlineEarningCapHours
+        theme = snapshot.theme
+        lastActiveTimestamp = snapshot.lastActiveTimestamp
+    }
+
+    private static func decodeCurrencies(_ raw: [String: Double]) -> [ResourceType: Double] {
+        var result: [ResourceType: Double] = [:]
+        for (key, value) in raw {
+            if let type = ResourceType(rawValue: key) {
+                result[type] = value
+            }
+        }
+        return result
+    }
+
+    // MARK: - Read helpers
+
+    /// Current spendable amount of a currency.
+    func amount(of type: ResourceType) -> Double {
+        currencyAmounts[type] ?? 0
+    }
+
+    /// Number of buildings owned for a tier.
+    func count(of tierID: String) -> Int {
+        buildingCounts[tierID] ?? 0
+    }
+
+    /// Tiers that are currently visible/unlocked to the player. A tier unlocks
+    /// once the player owns at least `unlockRequirement` of the previous tier.
+    var unlockedTiers: [ProductionTier] {
+        config.tiers.filter { isUnlocked($0) }
+    }
+
+    /// Whether a tier is unlocked given current building counts.
+    func isUnlocked(_ tier: ProductionTier) -> Bool {
+        guard tier.tier > 1 else { return true }
+        let previous = config.tiers.first { $0.tier == tier.tier - 1 }
+        guard let previous else { return true }
+        return count(of: previous.id) >= tier.unlockRequirement
+    }
+
+    /// Cost to buy one more of the given tier.
+    func nextCost(for tier: ProductionTier) -> Double {
+        tier.cost(forOwnedCount: count(of: tier.id))
+    }
+
+    /// Whether the player can afford one more of the given tier right now.
+    func canAfford(_ tier: ProductionTier) -> Bool {
+        amount(of: tier.costCurrency) >= nextCost(for: tier)
+    }
+
+    /// Aggregate output-per-second for a currency across all owned buildings,
+    /// before offline penalties. Includes the prestige multiplier.
+    func outputPerSecond(of resource: ResourceType) -> Double {
+        config.tiers.reduce(0) { partial, tier in
+            guard tier.produces == resource else { return partial }
+            let count = Double(self.count(of: tier.id))
+            return partial + count * tier.baseOutputPerSecond * prestigeMultiplier
+        }
+    }
+
+    /// Output-per-second for every resource, keyed by type. Used by the engine
+    /// and the offline calculator.
+    func outputPerSecondByResource() -> [ResourceType: Double] {
+        var result: [ResourceType: Double] = [:]
+        for tier in config.tiers {
+            let count = Double(self.count(of: tier.id))
+            guard count > 0 else { continue }
+            result[tier.produces, default: 0] += count * tier.baseOutputPerSecond * prestigeMultiplier
+        }
+        return result
+    }
+
+    /// Permanent production multiplier granted by prestige progress. Each Lucid
+    /// Shard adds a small permanent boost (foundation value; tuned later).
+    var prestigeMultiplier: Double {
+        1.0 + (totalLucidShardsEarned * 0.02)
+    }
+
+    // MARK: - Mutations
+
+    /// Credit a currency, also tracking lifetime totals.
+    func credit(_ resource: ResourceType, _ value: Double) {
+        guard value > 0, value.isFinite else { return }
+        currencyAmounts[resource, default: 0] += value
+        currencyLifetimeEarned[resource, default: 0] += value
+    }
+
+    /// Attempt to spend a currency. Returns `false` (and mutates nothing) if the
+    /// player cannot afford it.
+    @discardableResult
+    func spend(_ resource: ResourceType, _ value: Double) -> Bool {
+        guard value >= 0, value.isFinite else { return false }
+        guard amount(of: resource) >= value else { return false }
+        currencyAmounts[resource, default: 0] -= value
+        return true
+    }
+
+    /// Advance the simulation by `delta` seconds of *active* production.
+    /// Called by `ProductionEngine` on the main actor each tick.
+    func applyProduction(delta: TimeInterval) {
+        guard delta > 0 else { return }
+        let perResource = outputPerSecondByResource()
+        for (resource, perSecond) in perResource {
+            credit(resource, perSecond * delta)
+        }
+        advanceMoonRestoration(byMoonlightDelta: (perResource[.moonlight] ?? 0) * delta)
+    }
+
+    /// Apply a pre-computed bundle of offline earnings (already penalised and
+    /// capped by `OfflineEarningsCalculator`).
+    func applyOfflineEarnings(_ earnings: [ResourceType: Double]) {
+        for (resource, value) in earnings {
+            credit(resource, value)
+            if resource == .moonlight {
+                advanceMoonRestoration(byMoonlightDelta: value)
+            }
+        }
+    }
+
+    private func advanceMoonRestoration(byMoonlightDelta delta: Double) {
+        guard delta > 0, config.moonlightForFullRestoration > 0 else { return }
+        let progressGain = delta / config.moonlightForFullRestoration
+        moonRestoration = min(1.0, moonRestoration + progressGain)
+        bestRunMoonlightRestored = max(bestRunMoonlightRestored, moonRestoration)
+    }
+
+    /// Purchase one building of the given tier if affordable. Returns whether
+    /// the purchase succeeded.
+    @discardableResult
+    func purchaseBuilding(_ tier: ProductionTier) -> Bool {
+        let cost = nextCost(for: tier)
+        guard spend(tier.costCurrency, cost) else { return false }
+        buildingCounts[tier.id, default: 0] += 1
+        return true
+    }
+
+    /// Replace the offline cap (e.g. after an upgrade/IAP), clamped to config.
+    func setOfflineCapHours(_ hours: Int) {
+        offlineEarningCapHours = max(config.defaultOfflineCapHours,
+                                     min(hours, config.maxOfflineCapHours))
+    }
+
+    /// Apply a completed New Moon Reset (prestige). Soft currencies, buildings
+    /// and moon progress reset; Stardust, Lucid Shards and permanent upgrades
+    /// are kept. See `TECHNICAL_PRD.md` §6.
+    func applyPrestige(shardsEarned: Double) {
+        for resource in ResourceType.allCases where resource.isSoftCurrency {
+            currencyAmounts[resource] = 0
+        }
+        buildingCounts = [:]
+        moonRestoration = 0
+        credit(.lucidShards, shardsEarned)
+        totalLucidShardsEarned += shardsEarned
+        resetCount += 1
+        currencyAmounts[.whispers] = config.startingWhispers
+    }
+
+    func updateLastActive(_ date: Date) {
+        lastActiveTimestamp = date
+    }
+
+    // MARK: - Snapshot projection
+
+    /// Project the current state into a `Codable` snapshot for persistence.
+    func snapshot(now: Date) -> GameSnapshot {
+        GameSnapshot(
+            schemaVersion: 1,
+            currencyAmounts: encodeCurrencies(currencyAmounts),
+            currencyLifetimeEarned: encodeCurrencies(currencyLifetimeEarned),
+            buildingCounts: buildingCounts,
+            purchasedUpgradeIDs: Array(purchasedUpgradeIDs),
+            moonRestoration: moonRestoration,
+            resetCount: resetCount,
+            totalLucidShardsEarned: totalLucidShardsEarned,
+            bestRunMoonlightRestored: bestRunMoonlightRestored,
+            permanentUpgradeIDs: Array(permanentUpgradeIDs),
+            isMusicEnabled: isMusicEnabled,
+            isSFXEnabled: isSFXEnabled,
+            isNotificationsEnabled: isNotificationsEnabled,
+            offlineEarningCapHours: offlineEarningCapHours,
+            theme: theme,
+            lastActiveTimestamp: now
+        )
+    }
+
+    private func encodeCurrencies(_ values: [ResourceType: Double]) -> [String: Double] {
+        var result: [String: Double] = [:]
+        for (type, value) in values {
+            result[type.rawValue] = value
+        }
+        return result
+    }
+}
