@@ -31,14 +31,18 @@ actor SwiftDataGameStateRepository: GameStateRepository {
             counts[record.id] = record.count
         }
 
-        let purchasedUpgrades = upgrades.filter(\.isPurchased).map(\.id)
+        var levels: [String: Int] = [:]
+        for record in upgrades where record.level > 0 {
+            levels[record.buildingID] = record.level
+        }
 
         return GameSnapshot(
             schemaVersion: prestige.schemaVersion,
             currencyAmounts: amounts,
             currencyLifetimeEarned: lifetime,
             buildingCounts: counts,
-            purchasedUpgradeIDs: purchasedUpgrades,
+            upgradeLevels: levels,
+            unlockedTierIDs: prestige.unlockedTierIDs,
             ordersFulfilled: prestige.ordersFulfilled,
             restoredNodeIDs: prestige.restoredNodeIDs,
             resetCount: prestige.resetCount,
@@ -99,22 +103,20 @@ actor SwiftDataGameStateRepository: GameStateRepository {
             }
         }
 
-        // Upgrades (upsert by id). Stores the purchased set; rows for upgrades no
-        // longer purchased (e.g. cleared by prestige) are marked unpurchased.
-        let purchasedSet = Set(snapshot.purchasedUpgradeIDs)
+        // Upgrade levels (upsert by building id). Buildings missing from the
+        // snapshot (e.g. cleared by prestige) are reset to level 0.
         let existingUpgrades = (try? modelContext.fetch(FetchDescriptor<UpgradeRecord>())) ?? []
-        var upgradeByID = Dictionary(existingUpgrades.map { ($0.id, $0) }) { first, _ in first }
-        for record in existingUpgrades where record.isPurchased && !purchasedSet.contains(record.id) {
-            record.isPurchased = false
+        var upgradeByID = Dictionary(existingUpgrades.map { ($0.buildingID, $0) }) { first, _ in first }
+        for record in existingUpgrades where (snapshot.upgradeLevels[record.buildingID] ?? 0) == 0 {
+            record.level = 0
         }
-        for id in purchasedSet {
-            if let record = upgradeByID[id] {
-                record.isPurchased = true
+        for (buildingID, level) in snapshot.upgradeLevels where level > 0 {
+            if let record = upgradeByID[buildingID] {
+                record.level = level
             } else {
-                let buildingID = config.upgrade(id: id)?.buildingID ?? ""
-                let record = UpgradeRecord(id: id, buildingID: buildingID, isPurchased: true)
+                let record = UpgradeRecord(buildingID: buildingID, level: level)
                 modelContext.insert(record)
-                upgradeByID[id] = record
+                upgradeByID[buildingID] = record
             }
         }
 
@@ -126,6 +128,7 @@ actor SwiftDataGameStateRepository: GameStateRepository {
             prestige.permanentUpgrades = snapshot.permanentUpgradeIDs
             prestige.bestRunMoonlightRestored = snapshot.bestRunMoonlightRestored
             prestige.restoredNodeIDs = snapshot.restoredNodeIDs
+            prestige.unlockedTierIDs = snapshot.unlockedTierIDs
             prestige.ordersFulfilled = snapshot.ordersFulfilled
             prestige.schemaVersion = snapshot.schemaVersion
         } else {
@@ -136,6 +139,7 @@ actor SwiftDataGameStateRepository: GameStateRepository {
                 bestRunMoonlightRestored: snapshot.bestRunMoonlightRestored,
                 lastResetDate: nil,
                 restoredNodeIDs: snapshot.restoredNodeIDs,
+                unlockedTierIDs: snapshot.unlockedTierIDs,
                 ordersFulfilled: snapshot.ordersFulfilled,
                 schemaVersion: snapshot.schemaVersion
             ))
@@ -170,6 +174,7 @@ actor SwiftDataGameStateRepository: GameStateRepository {
         try? modelContext.delete(model: UpgradeRecord.self)
         try? modelContext.delete(model: PrestigeRecord.self)
         try? modelContext.delete(model: SettingsRecord.self)
+        // MilestoneRecord is owned by MilestoneService (reset via its own reset()).
         try? modelContext.save()
     }
 }

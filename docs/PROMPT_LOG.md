@@ -582,7 +582,7 @@ toolchain; `xcodebuild build`/`test` not executed here.
 ---
 
 ### MOONLOOM-PROMPT-004: Offline Earnings
-**Date:** 2026-06-27 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E005 | **Status:** 📅 Queued
+**Date:** 2026-06-28 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E005 | **Status:** ✅ Used
 
 ```
 Implement Phase 4 for Moonloom: offline earnings.
@@ -623,6 +623,52 @@ Acceptance criteria:
 - Rewards persist after claiming.
 - Tests pass. App builds. Trackers updated.
 ```
+
+**Refined brief (2026-06-28) — "Full Economy Expansion":** the user expanded
+Phase 4 into a five-part economy pass (all 12 tiers with unlock costs; leveled
+per-building upgrades; a `MilestoneService` actor with SwiftData; offline
+per-building breakdown; an economy balance test suite), explicitly overriding
+the narrower offline-only prompt.
+
+**Economy-model decision:** the brief specifies "Moonlight unlock costs" and
+"no building produces 0 Moonlight" with a per-building Moonlight breakdown — a
+**single-Moonlight production economy**. This diverges from the PRD's
+multi-currency chain (whispers → dreamthread → moonlight). Per the user's
+explicit, repeated direction ("the full spec overrides"), all 12 tiers now
+produce **Moonlight**, with Moonlight-denominated unlock/buy/upgrade costs and
+milestone thresholds. The canonical README tier *names* were kept (the brief's
+alt names conflicted with the PRD and the built game); Stardust still comes from
+orders and Lucid Shards from prestige. Documented here rather than rewriting the
+PRDs.
+
+**Outcome (2026-06-28):**
+- **All 12 tiers** now have explicit Moonlight `unlockCost` + `baseUpgradeCost`
+  in `EconomyConfig`; tiers unlock **sequentially** (no skipping) by paying the
+  unlock cost; each produces Moonlight at an escalating base rate.
+- **Per-building upgrades (levels 0…10)**: each level ×1.5 (stacking), cost
+  `baseUpgradeCost × 1.8^level`. `GameState.upgradeBuilding`,
+  `buildingMultiplier = 1.5^level`; `UpgradesView` shows level, current ×, cost
+  to next, and before → after rate. `UpgradeRecord` stores level.
+- **MilestoneService (actor + SwiftData)**: cumulative-Moonlight thresholds
+  (1K…1T), +10% global per milestone, **capped at 5×**, persisted monotonically
+  in `MilestoneRecord`. Pure `MilestoneCalculator` does the math; `AppContainer`
+  re-evaluates ~1×/s and applies the multiplier to the production tick + HUD.
+- **Offline per-building breakdown**: `OfflineEarningsCalculator` now returns a
+  per-tier breakdown + most-productive building + cap-applied flag (multipliers
+  baked into the per-tier rates); the Welcome-back modal shows the breakdown.
+- **Economy balance pass**: `EconomyBalanceTests` verifies 12 tiers, no zero
+  base rate, monotonic costs, no Double overflow at max upgrade level, and the
+  ≤5× milestone cap.
+
+Tests updated/added: `GameStateTests`, `EconomySimulationTests`, `OrderTests`,
+`SettingsAndRateTests`, `UpgradeAndMilestoneTests` (now upgrade-level +
+`MilestoneCalculator`), `OfflineEarningsCalculatorTests` (per-building),
+`EconomyBalanceTests`.
+
+Verification note: same as BUG-001 — authored on Linux without an Xcode
+toolchain; `xcodebuild build`/`test` not executed here. This phase changed the
+persistence schema (UpgradeRecord, MilestoneRecord, PrestigeRecord), so a
+SwiftData migration check on-device is warranted.
 
 ---
 
@@ -911,10 +957,10 @@ Return:
 | Ideation (ChatGPT) | 2 | 2 | 0 |
 | Architecture | 2 | 0 | 2 |
 | Claude Code Universal | 1 | 0 | 1 |
-| Claude Code Implementation | 8 | 3 | 5 |
+| Claude Code Implementation | 8 | 4 | 4 |
 | Claude Code Audit | 1 | 0 | 1 |
-| **Total** | **14** | **5** | **9** |
+| **Total** | **14** | **6** | **8** |
 
 ---
 
-*Last updated: 2026-06-28 — MOONLOOM-PROMPT-003 (factory polish + Moon Restoration) implemented*
+*Last updated: 2026-06-28 — MOONLOOM-PROMPT-004 (full economy expansion) implemented*

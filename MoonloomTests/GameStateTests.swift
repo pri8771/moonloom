@@ -9,9 +9,17 @@ final class GameStateTests: XCTestCase {
         return GameState(config: config, snapshot: .newGame(config: config, now: Date(timeIntervalSince1970: 0)))
     }
 
-    func testNewGameStartsWithSeedWhispers() {
+    func testNewGameStartsWithSeedMoonlight() {
         let state = makeState()
-        XCTAssertEqual(state.amount(of: .whispers), EconomyConfig().startingWhispers, accuracy: 0.001)
+        XCTAssertEqual(state.amount(of: .moonlight), EconomyConfig().startingMoonlight, accuracy: 0.001)
+    }
+
+    func testFirstTierUnlockedByDefault() throws {
+        let state = makeState()
+        let first = try XCTUnwrap(state.config.tiers.first)
+        XCTAssertTrue(state.isUnlocked(first))
+        let second = try XCTUnwrap(state.config.tier(id: "lullaby_well"))
+        XCTAssertFalse(state.isUnlocked(second))
     }
 
     func testPurchaseDeductsCostAndIncrementsCount() throws {
@@ -20,12 +28,13 @@ final class GameStateTests: XCTestCase {
         let cost = state.nextCost(for: tier)
         XCTAssertTrue(state.purchaseBuilding(tier))
         XCTAssertEqual(state.count(of: tier.id), 1)
-        XCTAssertEqual(state.amount(of: .whispers), EconomyConfig().startingWhispers - cost, accuracy: 0.001)
+        XCTAssertEqual(state.amount(of: .moonlight), EconomyConfig().startingMoonlight - cost, accuracy: 0.001)
     }
 
-    func testCannotPurchaseWhenUnaffordable() throws {
+    func testCannotPurchaseLockedTier() throws {
         let state = makeState()
         let tier = try XCTUnwrap(state.config.tier(id: "moonheart_engine"))
+        state.credit(.moonlight, 1e20) // plenty of Moonlight, but it's locked
         XCTAssertFalse(state.purchaseBuilding(tier))
         XCTAssertEqual(state.count(of: tier.id), 0)
     }
@@ -34,10 +43,10 @@ final class GameStateTests: XCTestCase {
         let state = makeState()
         let tier = try XCTUnwrap(state.config.tier(id: "whisper_net"))
         XCTAssertTrue(state.purchaseBuilding(tier))
-        let before = state.amount(of: .whispers)
+        let before = state.amount(of: .moonlight)
         state.applyProduction(delta: 10)
-        // 1 net * 0.1/s * 10s = 1.0 whispers added.
-        XCTAssertEqual(state.amount(of: .whispers), before + 1.0, accuracy: 0.0001)
+        // 1 net × 0.1/s × 10s = 1.0 Moonlight added.
+        XCTAssertEqual(state.amount(of: .moonlight), before + 1.0, accuracy: 0.0001)
     }
 
     func testSecondPurchaseCostsMore() throws {
@@ -45,40 +54,58 @@ final class GameStateTests: XCTestCase {
         let tier = try XCTUnwrap(state.config.tier(id: "whisper_net"))
         let firstCost = state.nextCost(for: tier)
         XCTAssertTrue(state.purchaseBuilding(tier))
-        let secondCost = state.nextCost(for: tier)
-        XCTAssertGreaterThan(secondCost, firstCost)
+        XCTAssertGreaterThan(state.nextCost(for: tier), firstCost)
     }
 
-    func testPrestigeResetsSoftCurrenciesButKeepsShards() {
+    func testSequentialTierUnlock() throws {
         let state = makeState()
-        state.credit(.dreamthread, 5_000)
+        let well = try XCTUnwrap(state.config.tier(id: "lullaby_well"))
+        let spindle = try XCTUnwrap(state.config.tier(id: "dreamthread_spindle"))
+
+        // Spindle can't be unlocked before the well (no skipping).
+        state.credit(.moonlight, 1e12)
+        XCTAssertFalse(state.canUnlockTier(spindle))
+        XCTAssertTrue(state.canUnlockTier(well))
+        XCTAssertTrue(state.unlockTier(well))
+        XCTAssertTrue(state.isUnlocked(well))
+        // Now the spindle becomes unlockable.
+        XCTAssertTrue(state.canUnlockTier(spindle))
+    }
+
+    func testUnlockSpendsMoonlight() throws {
+        let state = makeState()
+        let well = try XCTUnwrap(state.config.tier(id: "lullaby_well"))
+        state.credit(.moonlight, well.unlockCost)
+        let before = state.amount(of: .moonlight)
+        XCTAssertTrue(state.unlockTier(well))
+        XCTAssertEqual(state.amount(of: .moonlight), before - well.unlockCost, accuracy: 0.001)
+    }
+
+    func testPrestigeResetsRunButKeepsPremiumAndShards() {
+        let state = makeState()
+        state.credit(.moonlight, 5_000)
         state.credit(.stardust, 42)
         state.applyPrestige(shardsEarned: 50)
 
-        XCTAssertEqual(state.amount(of: .dreamthread), 0, accuracy: 0.001)
-        XCTAssertEqual(state.amount(of: .whispers), EconomyConfig().startingWhispers, accuracy: 0.001)
+        XCTAssertEqual(state.amount(of: .moonlight), EconomyConfig().startingMoonlight, accuracy: 0.001)
         XCTAssertEqual(state.amount(of: .stardust), 42, accuracy: 0.001) // premium kept
         XCTAssertEqual(state.amount(of: .lucidShards), 50, accuracy: 0.001)
         XCTAssertEqual(state.totalLucidShardsEarned, 50, accuracy: 0.001)
         XCTAssertEqual(state.resetCount, 1)
-        XCTAssertEqual(state.moonRestoration, 0, accuracy: 0.001)
+        // Only the first tier remains unlocked.
+        XCTAssertEqual(state.unlockedTierIDs, Set([state.config.tiers.first?.id].compactMap { $0 }))
     }
 
-    func testSnapshotRoundTrip() {
+    func testSnapshotRoundTrip() throws {
         let state = makeState()
         state.credit(.moonlight, 1_234)
+        let well = try XCTUnwrap(state.config.tier(id: "lullaby_well"))
+        state.credit(.moonlight, well.unlockCost)
+        XCTAssertTrue(state.unlockTier(well))
+
         let snapshot = state.snapshot(now: Date(timeIntervalSince1970: 100))
-
         let restored = GameState(config: EconomyConfig(), snapshot: snapshot)
-        XCTAssertEqual(restored.amount(of: .moonlight), 1_234, accuracy: 0.001)
-    }
-
-    func testTierUnlockProgression() throws {
-        let state = makeState()
-        let tier2 = try XCTUnwrap(state.config.tier(id: "lullaby_well"))
-        XCTAssertFalse(state.isUnlocked(tier2)) // needs 1 whisper_net
-        let tier1 = try XCTUnwrap(state.config.tier(id: "whisper_net"))
-        XCTAssertTrue(state.purchaseBuilding(tier1))
-        XCTAssertTrue(state.isUnlocked(tier2))
+        XCTAssertEqual(restored.amount(of: .moonlight), state.amount(of: .moonlight), accuracy: 0.001)
+        XCTAssertTrue(restored.isUnlocked(well))
     }
 }

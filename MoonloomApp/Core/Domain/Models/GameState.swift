@@ -14,9 +14,6 @@ final class GameState: ObservableObject {
 
     let config: EconomyConfig
 
-    /// Cached upgrade definitions grouped by building, built once from `config`
-    /// so the hot production path avoids rebuilding the upgrade catalog.
-    private let upgradesByBuilding: [String: [Upgrade]]
     /// Deterministic generator for the Dream Order chain.
     private let orderGenerator: OrderGenerator
 
@@ -26,7 +23,13 @@ final class GameState: ObservableObject {
 
     // MARK: - Buildings & upgrades
     @Published private(set) var buildingCounts: [String: Int]
-    @Published private(set) var purchasedUpgradeIDs: Set<String>
+    /// Per-building upgrade level (0...`config.maxUpgradeLevel`), keyed by tier id.
+    @Published private(set) var upgradeLevels: [String: Int]
+    /// Tiers the player has unlocked (paid the Moonlight unlock cost for).
+    @Published private(set) var unlockedTierIDs: Set<String>
+    /// Cached global production multiplier from milestones, updated by the app
+    /// from `MilestoneService` (read synchronously in the hot tick path).
+    @Published private(set) var globalMultiplier: Double = 1.0
 
     // MARK: - Orders
     /// Number of Dream Orders fulfilled (drives the sequential order board).
@@ -55,12 +58,12 @@ final class GameState: ObservableObject {
 
     init(config: EconomyConfig = EconomyConfig(), snapshot: GameSnapshot) {
         self.config = config
-        self.upgradesByBuilding = Dictionary(grouping: config.upgrades, by: \.buildingID)
         self.orderGenerator = OrderGenerator(config: config)
         self.currencyAmounts = Self.decodeCurrencies(snapshot.currencyAmounts)
         self.currencyLifetimeEarned = Self.decodeCurrencies(snapshot.currencyLifetimeEarned)
         self.buildingCounts = snapshot.buildingCounts
-        self.purchasedUpgradeIDs = Set(snapshot.purchasedUpgradeIDs)
+        self.upgradeLevels = snapshot.upgradeLevels
+        self.unlockedTierIDs = Set(snapshot.unlockedTierIDs)
         self.ordersFulfilled = snapshot.ordersFulfilled
         self.restoredNodeIDs = Set(snapshot.restoredNodeIDs)
         self.resetCount = snapshot.resetCount
@@ -82,7 +85,8 @@ final class GameState: ObservableObject {
         currencyAmounts = Self.decodeCurrencies(snapshot.currencyAmounts)
         currencyLifetimeEarned = Self.decodeCurrencies(snapshot.currencyLifetimeEarned)
         buildingCounts = snapshot.buildingCounts
-        purchasedUpgradeIDs = Set(snapshot.purchasedUpgradeIDs)
+        upgradeLevels = snapshot.upgradeLevels
+        unlockedTierIDs = Set(snapshot.unlockedTierIDs)
         ordersFulfilled = snapshot.ordersFulfilled
         restoredNodeIDs = Set(snapshot.restoredNodeIDs)
         resetCount = snapshot.resetCount
@@ -119,18 +123,37 @@ final class GameState: ObservableObject {
         buildingCounts[tierID] ?? 0
     }
 
-    /// Tiers that are currently visible/unlocked to the player. A tier unlocks
-    /// once the player owns at least `unlockRequirement` of the previous tier.
+    /// Tiers that are currently unlocked (the player paid their unlock cost).
     var unlockedTiers: [ProductionTier] {
         config.tiers.filter { isUnlocked($0) }
     }
 
-    /// Whether a tier is unlocked given current building counts.
+    /// Whether a tier has been unlocked. Tier 1 is always unlocked.
     func isUnlocked(_ tier: ProductionTier) -> Bool {
-        guard tier.tier > 1 else { return true }
-        let previous = config.tiers.first { $0.tier == tier.tier - 1 }
-        guard let previous else { return true }
-        return count(of: previous.id) >= tier.unlockRequirement
+        tier.tier <= 1 || unlockedTierIDs.contains(tier.id)
+    }
+
+    /// Whether the tier *before* this one is unlocked (so this one is reachable).
+    func isPreviousTierUnlocked(_ tier: ProductionTier) -> Bool {
+        guard let previous = config.previousTier(of: tier) else { return true }
+        return isUnlocked(previous)
+    }
+
+    /// Whether the player can unlock this tier now: it's locked, the previous
+    /// tier is unlocked (sequential, no skipping), and they can afford the cost.
+    func canUnlockTier(_ tier: ProductionTier) -> Bool {
+        !isUnlocked(tier)
+            && isPreviousTierUnlocked(tier)
+            && amount(of: tier.costCurrency) >= tier.unlockCost
+    }
+
+    /// Pay a tier's one-time unlock cost. Returns whether it succeeded.
+    @discardableResult
+    func unlockTier(_ tier: ProductionTier) -> Bool {
+        guard canUnlockTier(tier) else { return false }
+        guard spend(tier.costCurrency, tier.unlockCost) else { return false }
+        unlockedTierIDs.insert(tier.id)
+        return true
     }
 
     /// Cost to buy one more of the given tier.
@@ -138,20 +161,30 @@ final class GameState: ObservableObject {
         tier.cost(forOwnedCount: count(of: tier.id))
     }
 
-    /// Whether the player can afford one more of the given tier right now.
+    /// Whether the player can afford one more of the given tier right now (and
+    /// the tier is unlocked).
     func canAfford(_ tier: ProductionTier) -> Bool {
-        amount(of: tier.costCurrency) >= nextCost(for: tier)
+        isUnlocked(tier) && amount(of: tier.costCurrency) >= nextCost(for: tier)
     }
 
-    /// Output-per-second for a single tier, applying the full documented
-    /// multiplier stack (`TECHNICAL_PRD.md` §4 / `MOONLOOM-PROMPT-002`):
-    /// `count × baseCPS × upgradeMultiplier × globalMultiplier × prestigeMultiplier`.
+    /// Output-per-second for a single tier, applying the full multiplier stack
+    /// (`MOONLOOM-PROMPT-004`):
+    /// `count × baseRate × upgradeMultiplier × globalMultiplier × prestigeMultiplier`.
     func outputPerSecond(forTier tier: ProductionTier) -> Double {
         Double(count(of: tier.id))
             * tier.baseOutputPerSecond
             * buildingMultiplier(for: tier.id)
             * globalMultiplier
             * prestigeMultiplier
+    }
+
+    /// Per-tier output-per-second for every owned, producing tier (used for the
+    /// offline per-building breakdown).
+    func perTierOutputPerSecond() -> [(tier: ProductionTier, perSecond: Double)] {
+        config.tiers.compactMap { tier in
+            let rate = outputPerSecond(forTier: tier)
+            return rate > 0 ? (tier, rate) : nil
+        }
     }
 
     /// Aggregate output-per-second for a currency across all owned buildings,
@@ -196,19 +229,15 @@ final class GameState: ObservableObject {
         1.0 + (totalLucidShardsEarned * 0.02)
     }
 
-    /// Product of all purchased upgrades' boosts for a building (1.0 if none).
+    /// Output multiplier for a building from its upgrade level (`1.5^level`).
     func buildingMultiplier(for buildingID: String) -> Double {
-        guard let upgrades = upgradesByBuilding[buildingID] else { return 1 }
-        return upgrades.reduce(1) { product, upgrade in
-            purchasedUpgradeIDs.contains(upgrade.id) ? product * upgrade.multiplierBoost : product
-        }
+        config.upgradeMultiplier(forLevel: upgradeLevel(of: buildingID))
     }
 
-    /// Global production multiplier from achieved milestones (1.0 + Σ bonuses).
-    var globalMultiplier: Double {
-        1.0 + config.milestones.reduce(0) { sum, milestone in
-            isAchieved(milestone) ? sum + milestone.globalMultiplierBonus : sum
-        }
+    /// Apply a freshly-evaluated global multiplier from `MilestoneService`.
+    func setGlobalMultiplier(_ value: Double) {
+        guard value.isFinite, value > 0 else { return }
+        globalMultiplier = value
     }
 
     /// Total number of buildings owned across all tiers.
@@ -216,62 +245,48 @@ final class GameState: ObservableObject {
         buildingCounts.values.reduce(0, +)
     }
 
-    // MARK: - Milestones
-
-    /// Whether a milestone's condition is currently satisfied.
-    func isAchieved(_ milestone: Milestone) -> Bool {
-        switch milestone.condition {
-        case .totalBuildings(let n):
-            return totalBuildingCount >= n
-        case .buildingCount(let buildingID, let n):
-            return count(of: buildingID) >= n
-        case .moonRestoration(let fraction):
-            return moonRestoration >= fraction
-        case .lifetimeEarned(let resource, let value):
-            return (currencyLifetimeEarned[resource] ?? 0) >= value
-        }
+    /// Lifetime Moonlight earned (drives milestones).
+    var lifetimeMoonlight: Double {
+        currencyLifetimeEarned[.moonlight] ?? 0
     }
 
-    /// All currently-achieved milestones.
-    var achievedMilestones: [Milestone] {
-        config.milestones.filter(isAchieved)
+    // MARK: - Per-building upgrades (levels 1...10)
+
+    /// Current upgrade level for a building (0 if none).
+    func upgradeLevel(of buildingID: String) -> Int {
+        upgradeLevels[buildingID] ?? 0
     }
 
-    // MARK: - Upgrades
-
-    /// Whether a building owns enough copies to reveal this upgrade.
-    func isUpgradeUnlocked(_ upgrade: Upgrade) -> Bool {
-        count(of: upgrade.buildingID) >= upgrade.requiredBuildingCount
+    /// Whether a building is already at the maximum upgrade level.
+    func isMaxLevel(_ tier: ProductionTier) -> Bool {
+        upgradeLevel(of: tier.id) >= config.maxUpgradeLevel
     }
 
-    func isUpgradePurchased(_ upgrade: Upgrade) -> Bool {
-        purchasedUpgradeIDs.contains(upgrade.id)
+    /// Cost to raise a building to its next upgrade level.
+    func upgradeCost(for tier: ProductionTier) -> Double {
+        tier.upgradeCost(forLevel: upgradeLevel(of: tier.id), growth: config.upgradeCostGrowth)
     }
 
-    /// Unlocked, unpurchased, and currently affordable.
-    func canBuyUpgrade(_ upgrade: Upgrade) -> Bool {
-        isUpgradeUnlocked(upgrade)
-            && !isUpgradePurchased(upgrade)
-            && amount(of: upgrade.costCurrency) >= upgrade.cost
+    /// Whether the player can upgrade this building now: it's unlocked, below max
+    /// level, and affordable.
+    func canUpgrade(_ tier: ProductionTier) -> Bool {
+        isUnlocked(tier)
+            && !isMaxLevel(tier)
+            && amount(of: tier.costCurrency) >= upgradeCost(for: tier)
     }
 
-    /// Unlocked but not yet purchased (the engine API `getAvailableUpgrades()`).
-    func availableUpgrades() -> [Upgrade] {
-        config.upgrades.filter { isUpgradeUnlocked($0) && !isUpgradePurchased($0) }
-    }
-
-    /// Available upgrades the player can afford right now.
-    func affordableUpgrades() -> [Upgrade] {
-        availableUpgrades().filter { amount(of: $0.costCurrency) >= $0.cost }
-    }
-
-    /// Purchase an upgrade if affordable. Returns whether it succeeded.
+    /// Raise a building's upgrade level by one. Returns whether it succeeded.
     @discardableResult
-    func purchaseUpgrade(_ upgrade: Upgrade) -> Bool {
-        guard canBuyUpgrade(upgrade) else { return false }
-        guard spend(upgrade.costCurrency, upgrade.cost) else { return false }
-        purchasedUpgradeIDs.insert(upgrade.id)
+    func upgradeBuilding(_ tier: ProductionTier) -> Bool {
+        guard canUpgrade(tier) else { return false }
+        guard spend(tier.costCurrency, upgradeCost(for: tier)) else { return false }
+        upgradeLevels[tier.id, default: 0] += 1
         return true
+    }
+
+    /// Unlocked buildings that can be upgraded right now (afford + below max).
+    func upgradeableTiers() -> [ProductionTier] {
+        config.tiers.filter { canUpgrade($0) }
     }
 
     // MARK: - Dream Orders
@@ -388,10 +403,11 @@ final class GameState: ObservableObject {
         canAfford(tier)
     }
 
-    /// Purchase one building of the given tier if affordable. Returns whether
-    /// the purchase succeeded.
+    /// Purchase one building of the given tier if unlocked and affordable.
+    /// Returns whether the purchase succeeded.
     @discardableResult
     func purchaseBuilding(_ tier: ProductionTier) -> Bool {
+        guard isUnlocked(tier) else { return false }
         let cost = nextCost(for: tier)
         guard spend(tier.costCurrency, cost) else { return false }
         buildingCounts[tier.id, default: 0] += 1
@@ -412,12 +428,16 @@ final class GameState: ObservableObject {
             currencyAmounts[resource] = 0
         }
         buildingCounts = [:]
-        purchasedUpgradeIDs.removeAll()  // building upgrades are run-scoped
+        upgradeLevels.removeAll()        // building upgrades are run-scoped
         restoredNodeIDs.removeAll()
+        // Re-lock all tiers except the first (re-unlock as you progress again).
+        unlockedTierIDs = Set(config.tiers.first.map { [$0.id] } ?? [])
         credit(.lucidShards, shardsEarned)
         totalLucidShardsEarned += shardsEarned
         resetCount += 1
-        currencyAmounts[.whispers] = config.startingWhispers
+        if let firstTier = config.tiers.first {
+            currencyAmounts[firstTier.costCurrency] = config.startingMoonlight
+        }
     }
 
     func updateLastActive(_ date: Date) {
@@ -433,7 +453,8 @@ final class GameState: ObservableObject {
             currencyAmounts: encodeCurrencies(currencyAmounts),
             currencyLifetimeEarned: encodeCurrencies(currencyLifetimeEarned),
             buildingCounts: buildingCounts,
-            purchasedUpgradeIDs: Array(purchasedUpgradeIDs),
+            upgradeLevels: upgradeLevels,
+            unlockedTierIDs: Array(unlockedTierIDs),
             ordersFulfilled: ordersFulfilled,
             restoredNodeIDs: Array(restoredNodeIDs),
             resetCount: resetCount,

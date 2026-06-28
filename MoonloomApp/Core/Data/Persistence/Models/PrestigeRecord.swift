@@ -15,6 +15,7 @@ final class PrestigeRecord {
     var bestRunMoonlightRestored: Double
     var lastResetDate: Date?
     var restoredNodeIDs: [String]
+    var unlockedTierIDs: [String]
     var ordersFulfilled: Int
     var schemaVersion: Int
 
@@ -25,6 +26,7 @@ final class PrestigeRecord {
         bestRunMoonlightRestored: Double,
         lastResetDate: Date?,
         restoredNodeIDs: [String],
+        unlockedTierIDs: [String],
         ordersFulfilled: Int,
         schemaVersion: Int
     ) {
@@ -34,6 +36,7 @@ final class PrestigeRecord {
         self.bestRunMoonlightRestored = bestRunMoonlightRestored
         self.lastResetDate = lastResetDate
         self.restoredNodeIDs = restoredNodeIDs
+        self.unlockedTierIDs = unlockedTierIDs
         self.ordersFulfilled = ordersFulfilled
         self.schemaVersion = schemaVersion
     }

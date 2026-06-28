@@ -27,11 +27,24 @@ struct ProductionTier: Identifiable, Sendable, Hashable {
     /// Number of the *previous* tier's buildings required before this tier
     /// unlocks. Tier 1 is always unlocked (`unlockRequirement == 0`).
     let unlockRequirement: Int
+    /// One-time cost (in `costCurrency`) to unlock this tier. Tiers unlock
+    /// sequentially; tier 1 is free (`unlockCost == 0`). See MOONLOOM-PROMPT-004.
+    let unlockCost: Double
+    /// Cost of the first per-building upgrade level (in `costCurrency`). Each
+    /// successive level scales by `EconomyConfig.upgradeCostGrowth`.
+    let baseUpgradeCost: Double
 
     /// Cost to purchase the `ownedCount + 1`-th building of this tier.
     /// Uses the standard idle exponential `baseCost * growth^ownedCount`.
     func cost(forOwnedCount ownedCount: Int) -> Double {
         guard ownedCount >= 0 else { return baseCost }
         return baseCost * pow(costGrowth, Double(ownedCount))
+    }
+
+    /// Cost to raise this building from `currentLevel` to `currentLevel + 1`,
+    /// `baseUpgradeCost * growth^currentLevel`.
+    func upgradeCost(forLevel currentLevel: Int, growth: Double) -> Double {
+        guard currentLevel >= 0 else { return baseUpgradeCost }
+        return baseUpgradeCost * pow(growth, Double(currentLevel))
     }
 }

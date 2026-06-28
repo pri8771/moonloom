@@ -9,6 +9,7 @@ enum AppDatabase {
         CurrencyRecord.self,
         BuildingRecord.self,
         UpgradeRecord.self,
+        MilestoneRecord.self,
         PrestigeRecord.self,
         SettingsRecord.self
     ])

@@ -10,8 +10,14 @@ struct OfflineWelcomeView: View {
 
     private let formatter = NumberAbbreviator()
 
-    private var earnedResources: [ResourceType] {
-        ResourceType.allCases.filter { (result.earnings[$0] ?? 0) > 0 }
+    /// Total Moonlight earned (the headline figure).
+    private var totalMoonlight: Double {
+        result.earnings[.moonlight] ?? 0
+    }
+
+    /// Per-building breakdown, capped to the top entries for a tidy modal.
+    private var breakdownRows: [OfflineEarningsCalculator.TierEarning] {
+        Array(result.perTier.prefix(8))
     }
 
     var body: some View {
@@ -26,31 +32,42 @@ struct OfflineWelcomeView: View {
                 Text("Welcome back!")
                     .font(.system(.title, design: .rounded).weight(.bold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("Your moth couriers were busy for \(elapsedText) while you were away.")
+                Text("Your moth couriers were busy for \(elapsedText) while you were away\(result.capApplied ? " (capped)" : "").")
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Theme.textSecondary)
 
-                VStack(spacing: 10) {
-                    ForEach(Array(earnedResources.enumerated()), id: \.element) { index, type in
-                        HStack {
-                            Label(type.displayName, systemImage: type.systemImage)
-                                .foregroundStyle(Theme.textPrimary)
-                            Spacer()
-                            Text("+\(formatter.string(from: result.earnings[type] ?? 0))")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(Theme.moonGold)
-                                .monospacedDigit()
-                        }
-                        .opacity(revealed || reduceMotion ? 1 : 0)
-                        .offset(y: revealed || reduceMotion ? 0 : 12)
-                        .animation(reduceMotion ? nil
-                                   : .spring(response: 0.4, dampingFraction: 0.8).delay(0.15 * Double(index) + 0.2),
-                                   value: revealed)
-                    }
+                totalEarned
+
+                if let top = result.mostProductiveTier {
+                    Label("Top earner: \(top.tierName)", systemImage: "star.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.moonGold)
                 }
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 16).fill(Theme.deepBlue.opacity(0.5)))
+
+                if !breakdownRows.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(Array(breakdownRows.enumerated()), id: \.element.id) { index, entry in
+                            HStack {
+                                Text(entry.tierName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.textPrimary)
+                                Spacer()
+                                Text("+\(formatter.string(from: entry.amount))")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(Theme.moonGold)
+                                    .monospacedDigit()
+                            }
+                            .opacity(revealed || reduceMotion ? 1 : 0)
+                            .offset(y: revealed || reduceMotion ? 0 : 12)
+                            .animation(reduceMotion ? nil
+                                       : .spring(response: 0.4, dampingFraction: 0.8).delay(0.1 * Double(index) + 0.2),
+                                       value: revealed)
+                        }
+                    }
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Theme.deepBlue.opacity(0.5)))
+                }
 
                 Button(action: onDismiss) {
                     Text("Collect")
@@ -70,6 +87,17 @@ struct OfflineWelcomeView: View {
             } else {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { revealed = true }
             }
+        }
+    }
+
+    private var totalEarned: some View {
+        HStack(spacing: 6) {
+            Image(systemName: ResourceType.moonlight.systemImage)
+                .foregroundStyle(Theme.moonGold)
+            Text("+\(formatter.string(from: totalMoonlight)) Moonlight")
+                .font(.system(.title3, design: .rounded).weight(.bold))
+                .foregroundStyle(Theme.textPrimary)
+                .monospacedDigit()
         }
     }
 

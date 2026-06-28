@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// A single production-building row. Renders three visual states for unlocked
-/// buildings — idle (dim), producing (pulsing glow), and maxed (steady golden
-/// glow) — and a greyed, locked state with an unlock hint for tiers the player
-/// hasn't reached yet. Buying is wired through `AppContainer`.
+/// A single production-building row. Unlocked buildings show idle/producing/maxed
+/// visual states, owned count, level, and a buy button. Locked buildings show an
+/// "Unlock for X" action once the previous tier is unlocked, otherwise a greyed
+/// "unlock the previous tier first" hint.
 struct BuildingRowView: View {
     let tier: ProductionTier
 
@@ -16,17 +16,12 @@ struct BuildingRowView: View {
     private let formatter = NumberAbbreviator()
 
     private var count: Int { gameState.count(of: tier.id) }
+    private var level: Int { gameState.upgradeLevel(of: tier.id) }
     private var isUnlocked: Bool { gameState.isUnlocked(tier) }
     private var nextCost: Double { gameState.nextCost(for: tier) }
     private var canAfford: Bool { gameState.canAfford(tier) }
     private var outputPerSecond: Double { gameState.outputPerSecond(forTier: tier) }
-
-    /// "Maxed" = every upgrade for this building has been purchased.
-    private var isMaxed: Bool {
-        let upgrades = gameState.config.upgrades(forBuilding: tier.id)
-        return !upgrades.isEmpty && upgrades.allSatisfy { gameState.isUpgradePurchased($0) }
-    }
-
+    private var isMaxed: Bool { gameState.isMaxLevel(tier) }
     private var isProducing: Bool { isUnlocked && count > 0 }
 
     var body: some View {
@@ -43,7 +38,7 @@ struct BuildingRowView: View {
         HStack(spacing: 12) {
             icon
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
+                HStack(spacing: 6) {
                     Text(tier.name)
                         .font(.headline)
                         .foregroundStyle(Theme.textPrimary)
@@ -53,6 +48,11 @@ struct BuildingRowView: View {
                         .monospacedDigit()
                         .contentTransition(.numericText())
                         .animation(.snappy, value: count)
+                    if level > 0 {
+                        Text("Lv \(level)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(Theme.softViolet)
+                    }
                     if isMaxed {
                         Image(systemName: "crown.fill")
                             .font(.caption2)
@@ -64,7 +64,7 @@ struct BuildingRowView: View {
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
                 if count > 0 {
-                    Text("+\(formatter.string(from: outputPerSecond)) \(tier.produces.displayName)/s")
+                    Text("+\(formatter.string(from: outputPerSecond)) Moonlight/s")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(Theme.softViolet)
                         .contentTransition(.numericText())
@@ -123,13 +123,15 @@ struct BuildingRowView: View {
         }
         .buttonStyle(.plain)
         .disabled(!canAfford)
-        .accessibilityLabel("Buy \(tier.name) for \(formatter.string(from: nextCost)) \(tier.costCurrency.displayName)")
+        .accessibilityLabel("Buy \(tier.name) for \(formatter.string(from: nextCost)) Moonlight")
     }
 
     // MARK: Locked
 
     private var lockedRow: some View {
-        HStack(spacing: 12) {
+        let canUnlock = gameState.canUnlockTier(tier)
+        let previousUnlocked = gameState.isPreviousTierUnlocked(tier)
+        return HStack(spacing: 12) {
             Image(systemName: "lock.fill")
                 .font(.title3)
                 .foregroundStyle(Theme.textSecondary)
@@ -138,23 +140,31 @@ struct BuildingRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tier.name)
                     .font(.headline)
-                    .foregroundStyle(Theme.textSecondary.opacity(0.8))
-                Text(unlockHint)
+                    .foregroundStyle(Theme.textSecondary.opacity(0.85))
+                Text(previousUnlocked
+                     ? "Unlock for \(formatter.string(from: tier.unlockCost)) Moonlight"
+                     : "Unlock the previous building first")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
             }
-            Spacer()
+            Spacer(minLength: 8)
+            if previousUnlocked {
+                Button {
+                    container.unlockTier(tier)
+                } label: {
+                    Text("Unlock")
+                        .font(.subheadline.weight(.bold))
+                        .padding(.vertical, 8).padding(.horizontal, 14)
+                        .background(RoundedRectangle(cornerRadius: 12)
+                            .fill(canUnlock ? Theme.moonGold : Theme.deepBlue.opacity(0.5)))
+                        .foregroundStyle(canUnlock ? Theme.midnight : Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canUnlock)
+            }
         }
         .padding(.vertical, 6)
-        .opacity(0.75)
-        .accessibilityLabel("\(tier.name), locked. \(unlockHint)")
-    }
-
-    private var unlockHint: String {
-        guard let previous = gameState.config.tiers.first(where: { $0.tier == tier.tier - 1 }) else {
-            return "Locked"
-        }
-        let have = gameState.count(of: previous.id)
-        return "Next unlock at \(tier.unlockRequirement) × \(previous.name) (\(have)/\(tier.unlockRequirement))"
+        .opacity(previousUnlocked ? 0.95 : 0.6)
+        .accessibilityLabel("\(tier.name), locked.")
     }
 }

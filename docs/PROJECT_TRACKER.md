@@ -30,6 +30,17 @@
 > Restoration reworked into spendable biome nodes** (Moonlight cost from config,
 > story beats, sparkle). Reduced-motion support throughout. New tests for
 > restoration costs, settings persistence, and production-rate accuracy.
+>
+> **Phase 4 milestone (2026-06-28, MOONLOOM-PROMPT-004 "Full Economy Expansion"):**
+> all 12 tiers given explicit Moonlight unlock costs (sequential unlock) +
+> per-building leveled upgrades (0–10, ×1.5 stacking); a `MilestoneService`
+> actor (SwiftData) drives a cumulative-Moonlight global multiplier (+10%/each,
+> capped 5×); offline earnings gained a per-building breakdown + top-earner; and
+> an `EconomyBalanceTests` suite was added. **Economy-model note:** per the
+> explicit brief, all tiers now produce Moonlight with Moonlight-denominated
+> costs (a documented divergence from the PRD's multi-currency chain; canonical
+> tier names kept). Persistence schema extended (UpgradeRecord→level,
+> MilestoneRecord, PrestigeRecord.unlockedTierIDs).
 
 ---
 
@@ -137,6 +148,11 @@ full multiplier stack verified by `EconomySimulationTests` / `UpgradeAndMileston
 | T005-02 | Offline cap enforcement (2h default) | ✅ | 2 | 2026-07-19 | 2026-07-20 | T005-01 |
 | T005-03 | "Welcome back!" summary modal | ✅ | 3 | 2026-07-20 | 2026-07-21 | T005-01 |
 | T005-04 | Local notifications (8h, 24h reminders) | 📅 | 3 | 2026-07-21 | 2026-07-22 | T005-02 |
+
+*Phase 4 added a per-building offline breakdown + top-earner + cap-applied flag,
+with multipliers (upgrade + global) baked into the offline rates. Local
+notifications (T005-04) remain deferred — they require scheduling/permissions
+work, not pure economy logic.*
 
 ---
 

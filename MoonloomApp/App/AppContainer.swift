@@ -20,6 +20,7 @@ final class AppContainer: ObservableObject {
     let analytics: AnalyticsService
     let offlineCalculator: OfflineEarningsCalculator
     let prestigeCalculator: PrestigeCalculator
+    let milestoneService: MilestoneService
 
     // Observable state
     @Published private(set) var gameState: GameState
@@ -31,11 +32,11 @@ final class AppContainer: ObservableObject {
 
     private var engine: ProductionEngine?
 
-    // Progression-event tracking (for unlock/milestone celebrations).
-    private var knownUnlockedTierIDs: Set<String> = []
-    private var knownMilestoneIDs: Set<String> = []
     // Accumulator for the gentle ~1Hz "production pulse" feedback.
     private var pulseAccumulator: TimeInterval = 0
+    // Accumulator + guard for the throttled milestone re-evaluation.
+    private var milestoneAccumulator: TimeInterval = 0
+    private var isEvaluatingMilestones = false
 
     init(
         modelContainer: ModelContainer,
@@ -45,6 +46,7 @@ final class AppContainer: ObservableObject {
         self.config = config
         self.timeProvider = timeProvider
         self.repository = SwiftDataGameStateRepository(modelContainer: modelContainer)
+        self.milestoneService = MilestoneService(modelContainer: modelContainer)
         self.haptics = HapticsService()
         self.audio = AudioService()
         self.analytics = AnalyticsService()
@@ -64,17 +66,19 @@ final class AppContainer: ObservableObject {
 
         let now = timeProvider.now()
         let loaded = await repository.load()
-
         if let loaded {
             gameState.restore(from: loaded)
+        }
+
+        // Apply the milestone global multiplier *before* crediting offline
+        // earnings, so offline production reflects milestones.
+        let evaluation = await milestoneService.evaluate(lifetimeMoonlight: gameState.lifetimeMoonlight)
+        gameState.setGlobalMultiplier(evaluation.multiplier)
+
+        if let loaded {
             creditOfflineEarnings(since: loaded.lastActiveTimestamp, now: now)
         }
         gameState.updateLastActive(now)
-
-        // Seed known unlocks/milestones so existing progress doesn't re-fire
-        // celebrations on launch.
-        knownUnlockedTierIDs = Set(gameState.unlockedTiers.map(\.id))
-        knownMilestoneIDs = Set(gameState.achievedMilestones.map(\.id))
 
         applySettingsToServices()
         analytics.log(.appLaunched)
@@ -94,7 +98,6 @@ final class AppContainer: ObservableObject {
             haptics.impact(.light)
             audio.playSFX("building_tap")
             analytics.log(.buildingPurchased(tierID: tier.id, count: gameState.count(of: tier.id)))
-            checkProgressEvents()
             Task { await save() }
         } else {
             haptics.warning()
@@ -102,15 +105,30 @@ final class AppContainer: ObservableObject {
         return success
     }
 
-    /// Buy a building upgrade. Returns whether the purchase succeeded.
+    /// Unlock a tier by paying its one-time Moonlight cost.
     @discardableResult
-    func purchaseUpgrade(_ upgrade: Upgrade) -> Bool {
-        let success = gameState.purchaseUpgrade(upgrade)
+    func unlockTier(_ tier: ProductionTier) -> Bool {
+        let success = gameState.unlockTier(tier)
+        if success {
+            haptics.impact(.heavy)
+            audio.playSFX("tier_unlock")
+            analytics.log(.tierUnlocked(tierID: tier.id))
+            celebrationMessage = "Unlocked \(tier.name)!"
+            Task { await save() }
+        } else {
+            haptics.warning()
+        }
+        return success
+    }
+
+    /// Raise a building's upgrade level by one. Returns whether it succeeded.
+    @discardableResult
+    func upgradeBuilding(_ tier: ProductionTier) -> Bool {
+        let success = gameState.upgradeBuilding(tier)
         if success {
             haptics.impact(.medium)
             audio.playSFX("upgrade")
-            analytics.log(.upgradePurchased(upgradeID: upgrade.id))
-            checkProgressEvents()
+            analytics.log(.upgradePurchased(tierID: tier.id, level: gameState.upgradeLevel(of: tier.id)))
             Task { await save() }
         } else {
             haptics.warning()
@@ -140,7 +158,6 @@ final class AppContainer: ObservableObject {
         if success {
             haptics.success()
             audio.playSFX("moon_restore")
-            checkProgressEvents()
             Task { await save() }
         } else {
             haptics.warning()
@@ -187,7 +204,9 @@ final class AppContainer: ObservableObject {
     func resetProgress() async {
         await engine?.stop()
         await repository.deleteAll()
+        await milestoneService.reset()
         gameState.restore(from: .newGame(config: config, now: timeProvider.now()))
+        gameState.setGlobalMultiplier(1.0)
         applySettingsToServices()
         await startEngine()
         await save()
@@ -226,7 +245,7 @@ final class AppContainer: ObservableObject {
 
     private func creditOfflineEarnings(since lastActive: Date, now: Date) {
         let result = offlineCalculator.calculate(
-            perSecond: gameState.outputPerSecondByResource(),
+            perTier: gameState.perTierOutputPerSecond(),
             capHours: gameState.offlineEarningCapHours,
             lastActive: lastActive,
             now: now
@@ -258,11 +277,34 @@ final class AppContainer: ObservableObject {
     }
 
     /// Per-tick hook: advance production, emit the gentle production pulse, and
-    /// detect newly unlocked tiers/milestones for celebration.
+    /// periodically re-evaluate milestones (which updates the global multiplier).
     private func onTick(delta: TimeInterval) {
         gameState.applyProduction(delta: delta)
         emitProductionPulse(delta: delta)
-        checkProgressEvents()
+        milestoneAccumulator += delta
+        if milestoneAccumulator >= 1.0 {
+            milestoneAccumulator = 0
+            evaluateMilestones()
+        }
+    }
+
+    /// Re-evaluate milestones off the main thread via `MilestoneService`, apply
+    /// the resulting global multiplier, and celebrate any newly-reached milestone.
+    private func evaluateMilestones() {
+        guard !isEvaluatingMilestones else { return }
+        isEvaluatingMilestones = true
+        let lifetime = gameState.lifetimeMoonlight
+        Task {
+            let evaluation = await milestoneService.evaluate(lifetimeMoonlight: lifetime)
+            gameState.setGlobalMultiplier(evaluation.multiplier)
+            if evaluation.newlyReached > 0 {
+                haptics.success()
+                audio.playSFX("milestone")
+                celebrationMessage = String(
+                    format: "Milestone! Global production ×%.2f", evaluation.multiplier)
+            }
+            isEvaluatingMilestones = false
+        }
     }
 
     /// A subtle ~1Hz "heartbeat" sound hook while the factory is producing, so
@@ -279,29 +321,6 @@ final class AppContainer: ObservableObject {
         guard pulseAccumulator >= config.productionPulseInterval else { return }
         pulseAccumulator = 0
         audio.playSFX("production_tick")
-    }
-
-    /// Fire one-shot celebrations when a new tier unlocks or a milestone is met.
-    private func checkProgressEvents() {
-        let unlocked = Set(gameState.unlockedTiers.map(\.id))
-        let newTiers = unlocked.subtracting(knownUnlockedTierIDs)
-        knownUnlockedTierIDs = unlocked
-        if let tier = gameState.config.tiers
-            .filter({ newTiers.contains($0.id) })
-            .max(by: { $0.tier < $1.tier }) {
-            celebrationMessage = "New building unlocked: \(tier.name)!"
-            haptics.impact(.heavy)
-            audio.playSFX("tier_unlock")
-        }
-
-        let achieved = Set(gameState.achievedMilestones.map(\.id))
-        let newMilestones = achieved.subtracting(knownMilestoneIDs)
-        knownMilestoneIDs = achieved
-        if let milestone = gameState.config.milestones.first(where: { newMilestones.contains($0.id) }) {
-            celebrationMessage = "Milestone reached: \(milestone.name)!"
-            haptics.success()
-            audio.playSFX("milestone")
-        }
     }
 
     private func save() async {

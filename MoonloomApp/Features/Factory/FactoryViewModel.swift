@@ -30,9 +30,20 @@ struct FactoryViewModel {
         gameState.globalMultiplier > 1.0001
     }
 
-    /// Count of unlocked, unpurchased upgrades (for the Upgrades button badge).
+    /// Number of cumulative-Moonlight milestones reached so far.
+    var milestoneCount: Int {
+        MilestoneCalculator(config: gameState.config)
+            .reachedCount(lifetimeMoonlight: gameState.lifetimeMoonlight)
+    }
+
+    /// Count of buildings that can be upgraded right now (for the badge).
     var availableUpgradeCount: Int {
-        gameState.availableUpgrades().count
+        gameState.upgradeableTiers().count
+    }
+
+    /// Count of tiers the player can unlock right now (for the badge).
+    var unlockableTierCount: Int {
+        gameState.config.tiers.filter { gameState.canUnlockTier($0) }.count
     }
 
     /// Whether an order is ready to fulfil right now (for the Orders badge).

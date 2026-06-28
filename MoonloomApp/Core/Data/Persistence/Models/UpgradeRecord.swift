@@ -1,20 +1,18 @@
 import Foundation
 import SwiftData
 
-/// SwiftData persistence record for a purchased building upgrade.
-/// See `TECHNICAL_PRD.md` §2 (UpgradeRecord) and `MOONLOOM-PROMPT-002`.
-/// Only purchased upgrades are stored; definition data (cost, boost) lives in
-/// `EconomyConfig`.
+/// SwiftData persistence for a building's upgrade level (MOONLOOM-PROMPT-004).
+/// Each building (tier) has one record holding its current upgrade level
+/// (0...`maxUpgradeLevel`). Upgrade definitions (cost curve, ×1.5 multiplier)
+/// live in `EconomyConfig`.
 @Model
 final class UpgradeRecord {
-    /// `Upgrade.id`, unique per save.
-    @Attribute(.unique) var id: String
-    var buildingID: String
-    var isPurchased: Bool
+    /// `ProductionTier.id`, unique per save.
+    @Attribute(.unique) var buildingID: String
+    var level: Int
 
-    init(id: String, buildingID: String, isPurchased: Bool) {
-        self.id = id
+    init(buildingID: String, level: Int) {
         self.buildingID = buildingID
-        self.isPurchased = isPurchased
+        self.level = level
     }
 }

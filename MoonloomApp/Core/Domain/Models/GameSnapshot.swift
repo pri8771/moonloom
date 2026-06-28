@@ -18,8 +18,9 @@ struct GameSnapshot: Codable, Sendable, Equatable {
     // MARK: Buildings (tier id → count)
     var buildingCounts: [String: Int]
 
-    // MARK: Upgrades / flags
-    var purchasedUpgradeIDs: [String]
+    // MARK: Upgrades (tier id → level) & unlocked tiers
+    var upgradeLevels: [String: Int]
+    var unlockedTierIDs: [String]
 
     // MARK: Orders
     var ordersFulfilled: Int
@@ -43,12 +44,16 @@ struct GameSnapshot: Codable, Sendable, Equatable {
 
     /// A fresh save for a brand-new player.
     static func newGame(config: EconomyConfig, now: Date) -> GameSnapshot {
-        GameSnapshot(
+        let firstTierID = config.tiers.first?.id
+        return GameSnapshot(
             schemaVersion: 1,
-            currencyAmounts: [ResourceType.whispers.rawValue: config.startingWhispers],
-            currencyLifetimeEarned: [ResourceType.whispers.rawValue: config.startingWhispers],
+            // Seed Moonlight to afford the first building. Not counted as lifetime
+            // earned, so milestones derive purely from production.
+            currencyAmounts: [ResourceType.moonlight.rawValue: config.startingMoonlight],
+            currencyLifetimeEarned: [:],
             buildingCounts: [:],
-            purchasedUpgradeIDs: [],
+            upgradeLevels: [:],
+            unlockedTierIDs: firstTierID.map { [$0] } ?? [],
             ordersFulfilled: 0,
             restoredNodeIDs: [],
             resetCount: 0,

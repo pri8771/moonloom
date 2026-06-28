@@ -84,7 +84,7 @@ struct FactoryView: View {
                     .contentTransition(.numericText())
             }
             if viewModel.hasGlobalBonus {
-                Text("Global production \(viewModel.globalMultiplierText)")
+                Text("\(viewModel.milestoneCount) milestones · Global production \(viewModel.globalMultiplierText)")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.softViolet)
             }

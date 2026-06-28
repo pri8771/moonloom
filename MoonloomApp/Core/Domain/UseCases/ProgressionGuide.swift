@@ -23,7 +23,7 @@ struct ProgressionGuide {
 
         // 1. Bootstrap: build the very first production station.
         if state.totalBuildingCount == 0, let first = tiers.first {
-            return "Tap Buy on \(first.name) to start gathering Whispers."
+            return "Tap Buy on \(first.name) to start producing Moonlight."
         }
 
         // 2. A ready order is the highest-value action (free Stardust).
@@ -31,34 +31,30 @@ struct ProgressionGuide {
             return "A Dream Order is ready — open Orders to claim \(formatter.string(from: order.rewardAmount)) Stardust."
         }
 
-        // 3. Drive the collection unlock: reach the tier that introduces Dreamthread.
-        if let spindle = tiers.first(where: { $0.id == "dreamthread_spindle" }),
-           !state.isUnlocked(spindle),
-           let gating = tiers.first(where: { $0.tier == spindle.tier - 1 }) {
-            let have = state.count(of: gating.id)
-            return "Buy \(spindle.unlockRequirement) × \(gating.name) (\(have)/\(spindle.unlockRequirement)) to unlock Dreamthread."
+        // 3. A tier ready to unlock is a major progress beat.
+        if let tier = tiers.first(where: { state.canUnlockTier($0) }) {
+            return "Unlock \(tier.name) for \(formatter.string(from: tier.unlockCost)) Moonlight."
         }
 
-        // 4. A restorable biome is a major progress beat — surface it.
+        // 4. A restorable biome brightens the moon.
         if let node = state.nextRestorationNode, state.canRestore(node) {
             return "Restore \(node.name) on the Moon screen to brighten the moon."
         }
 
         // 5. Nudge toward an affordable upgrade (clear power spike).
-        if let upgrade = state.affordableUpgrades().first {
-            return "You can afford \(upgrade.name) — upgrade to boost production."
+        if let tier = state.upgradeableTiers().first {
+            let level = state.upgradeLevel(of: tier.id) + 1
+            return "Upgrade \(tier.name) to level \(level) to boost its output ×1.5."
         }
 
-        // 6. Once Moonlight is flowing, point toward the next biome's cost.
-        if let node = state.nextRestorationNode,
-           state.outputPerSecond(of: .moonlight) > 0,
-           state.amount(of: .moonlight) < node.cost {
+        // 6. Point toward the next locked tier's unlock cost.
+        if let tier = tiers.first(where: { !state.isUnlocked($0) && state.isPreviousTierUnlocked($0) }) {
+            return "Save \(formatter.string(from: tier.unlockCost)) Moonlight to unlock \(tier.name)."
+        }
+
+        // 7. Otherwise, point toward the next biome's cost.
+        if let node = state.nextRestorationNode, state.amount(of: .moonlight) < node.cost {
             return "Save \(formatter.string(from: node.cost)) Moonlight to restore \(node.name)."
-        }
-
-        // 7. Otherwise, point at the next order's requirement.
-        if let order = state.activeOrder {
-            return "Gather \(formatter.string(from: order.requestAmount)) \(order.requestResource.displayName) for the next Dream Order."
         }
 
         return nil

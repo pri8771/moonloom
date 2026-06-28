@@ -4,117 +4,123 @@ import Foundation
 ///
 /// All tunable values — tier definitions, cost/growth curves, prestige math,
 /// and offline rules — live here so there are no scattered magic numbers in the
-/// engine or UI (see `MOONLOOM-PROMPT-001` technical requirements). Later phases
-/// tune these values; the engine reads them, never hard-codes them.
+/// engine or UI (see `MOONLOOM-PROMPT-001`/`-004`).
+///
+/// **MOONLOOM-PROMPT-004 economy model:** per the Phase 4 brief ("Moonlight
+/// unlock costs", "no building produces 0 Moonlight", per-building Moonlight
+/// breakdown), all 12 tiers produce **Moonlight**, and unlock/buy/upgrade costs
+/// and milestone thresholds are all denominated in Moonlight. This is a
+/// deliberate, documented divergence from the PRD's multi-currency chain, made
+/// to implement the written spec exactly (the canonical tier *names* from the
+/// README are kept; Stardust still comes from orders, Lucid Shards from prestige).
 struct EconomyConfig: Sendable {
 
     // MARK: - Starting state
 
-    /// Whispers granted to a brand-new save so the first building is affordable.
-    let startingWhispers: Double = 15
+    /// Moonlight granted to a brand-new save so the first building is affordable.
+    let startingMoonlight: Double = 15
 
-    // MARK: - Production tiers (12)
+    // MARK: - Production tiers (12) — all produce Moonlight
 
-    /// The 12 production tiers in order. Mirrors the README tier table and
-    /// `TECHNICAL_PRD.md` §4. For the foundation, intermediate fictional
-    /// resources (e.g. "Dream Fabric") are folded into the nearest tracked
-    /// currency; the five tracked currencies are defined by `ResourceType`.
+    /// The 12 production tiers in order (canonical README names). Each has an
+    /// explicit Moonlight unlock cost, per-unit buy cost, base production rate,
+    /// and base upgrade cost — all fully specified here.
     let tiers: [ProductionTier] = [
         ProductionTier(
             id: "whisper_net", tier: 1, name: "Whisper Nets",
             summary: "Catch whispers from sleeping towns.",
-            systemImage: "wind", produces: .whispers,
+            systemImage: "wind", produces: .moonlight,
             baseOutputPerSecond: 0.1,
-            costCurrency: .whispers, baseCost: 15, costGrowth: 1.15,
-            unlockRequirement: 0
+            costCurrency: .moonlight, baseCost: 10, costGrowth: 1.15,
+            unlockRequirement: 0, unlockCost: 0, baseUpgradeCost: 50
         ),
         ProductionTier(
             id: "lullaby_well", tier: 2, name: "Lullaby Wells",
             summary: "Amplify the whispers into a steady stream.",
-            systemImage: "drop.fill", produces: .whispers,
+            systemImage: "drop.fill", produces: .moonlight,
             baseOutputPerSecond: 1,
-            costCurrency: .whispers, baseCost: 100, costGrowth: 1.15,
-            unlockRequirement: 1
+            costCurrency: .moonlight, baseCost: 120, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 100, baseUpgradeCost: 600
         ),
         ProductionTier(
             id: "dreamthread_spindle", tier: 3, name: "Dreamthread Spindles",
             summary: "Spin whispers into dreamthread.",
-            systemImage: "scribble.variable", produces: .dreamthread,
-            baseOutputPerSecond: 0.5,
-            costCurrency: .whispers, baseCost: 1_100, costGrowth: 1.15,
-            unlockRequirement: 1
+            systemImage: "scribble.variable", produces: .moonlight,
+            baseOutputPerSecond: 8,
+            costCurrency: .moonlight, baseCost: 1_500, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 1_200, baseUpgradeCost: 7_500
         ),
         ProductionTier(
             id: "memory_loom", tier: 4, name: "Memory Looms",
             summary: "Weave dreamthread into dream fabric.",
-            systemImage: "square.grid.3x3.fill", produces: .dreamthread,
-            baseOutputPerSecond: 4,
-            costCurrency: .dreamthread, baseCost: 12_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            systemImage: "square.grid.3x3.fill", produces: .moonlight,
+            baseOutputPerSecond: 60,
+            costCurrency: .moonlight, baseCost: 18_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 15_000, baseUpgradeCost: 90_000
         ),
         ProductionTier(
             id: "nightmare_filter", tier: 5, name: "Nightmare Filters",
             summary: "Purify dreams of their nightmares.",
-            systemImage: "camera.filters", produces: .dreamthread,
-            baseOutputPerSecond: 26,
-            costCurrency: .dreamthread, baseCost: 130_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            systemImage: "camera.filters", produces: .moonlight,
+            baseOutputPerSecond: 450,
+            costCurrency: .moonlight, baseCost: 200_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 180_000, baseUpgradeCost: 1_000_000
         ),
         ProductionTier(
             id: "star_dye_vat", tier: 6, name: "Star Dye Vats",
             summary: "Add starlight value to each dream.",
-            systemImage: "paintpalette.fill", produces: .dreamthread,
-            baseOutputPerSecond: 140,
-            costCurrency: .dreamthread, baseCost: 1_400_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            systemImage: "paintpalette.fill", produces: .moonlight,
+            baseOutputPerSecond: 3_000,
+            costCurrency: .moonlight, baseCost: 2_500_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 2_200_000, baseUpgradeCost: 12_000_000
         ),
         ProductionTier(
             id: "moth_courier_nest", tier: 7, name: "Moth Courier Nests",
             summary: "Send moths to deliver dreams to the moon.",
             systemImage: "ant.fill", produces: .moonlight,
-            baseOutputPerSecond: 0.8,
-            costCurrency: .dreamthread, baseCost: 20_000_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            baseOutputPerSecond: 20_000,
+            costCurrency: .moonlight, baseCost: 30_000_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 28_000_000, baseUpgradeCost: 150_000_000
         ),
         ProductionTier(
             id: "cloud_packaging_line", tier: 8, name: "Cloud Packaging Line",
             summary: "Package shipments for safe delivery.",
             systemImage: "shippingbox.fill", produces: .moonlight,
-            baseOutputPerSecond: 8,
-            costCurrency: .moonlight, baseCost: 100_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            baseOutputPerSecond: 150_000,
+            costCurrency: .moonlight, baseCost: 400_000_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 380_000_000, baseUpgradeCost: 2_000_000_000
         ),
         ProductionTier(
             id: "dream_atlas", tier: 9, name: "Dream Atlas",
             summary: "Map faster delivery routes.",
             systemImage: "map.fill", produces: .moonlight,
-            baseOutputPerSecond: 50,
-            costCurrency: .moonlight, baseCost: 1_500_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            baseOutputPerSecond: 1_000_000,
+            costCurrency: .moonlight, baseCost: 5_000_000_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 4_800_000_000, baseUpgradeCost: 25_000_000_000
         ),
         ProductionTier(
             id: "comet_shipping_dock", tier: 10, name: "Comet Shipping Dock",
             summary: "Express deliveries on comet-back.",
             systemImage: "sparkle", produces: .moonlight,
-            baseOutputPerSecond: 300,
-            costCurrency: .moonlight, baseCost: 25_000_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            baseOutputPerSecond: 7_500_000,
+            costCurrency: .moonlight, baseCost: 65_000_000_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 62_000_000_000, baseUpgradeCost: 300_000_000_000
         ),
         ProductionTier(
             id: "lucid_observatory", tier: 11, name: "Lucid Observatory",
             summary: "Amplify moonlight at the source.",
             systemImage: "binoculars.fill", produces: .moonlight,
-            baseOutputPerSecond: 2_000,
-            costCurrency: .moonlight, baseCost: 400_000_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            baseOutputPerSecond: 50_000_000,
+            costCurrency: .moonlight, baseCost: 800_000_000_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 780_000_000_000, baseUpgradeCost: 4_000_000_000_000
         ),
         ProductionTier(
             id: "moonheart_engine", tier: 12, name: "Moonheart Engine",
             summary: "Power the moon's restoration itself.",
             systemImage: "moon.stars.fill", produces: .moonlight,
-            baseOutputPerSecond: 15_000,
-            costCurrency: .moonlight, baseCost: 8_000_000_000, costGrowth: 1.15,
-            unlockRequirement: 1
+            baseOutputPerSecond: 350_000_000,
+            costCurrency: .moonlight, baseCost: 10_000_000_000_000, costGrowth: 1.15,
+            unlockRequirement: 1, unlockCost: 9_500_000_000_000, baseUpgradeCost: 50_000_000_000_000
         )
     ]
 
@@ -123,10 +129,41 @@ struct EconomyConfig: Sendable {
         tiers.first { $0.id == id }
     }
 
+    /// The tier immediately before `tier` in unlock order, if any.
+    func previousTier(of tier: ProductionTier) -> ProductionTier? {
+        tiers.first { $0.tier == tier.tier - 1 }
+    }
+
+    // MARK: - Per-building upgrades (levels 1...10)
+
+    /// Maximum upgrade level per building.
+    let maxUpgradeLevel: Int = 10
+    /// Output multiplier each upgrade level applies (stacking): `1.5^level`.
+    let upgradeMultiplierPerLevel: Double = 1.5
+    /// Exponential growth of upgrade cost per level: `baseUpgradeCost * 1.8^level`.
+    let upgradeCostGrowth: Double = 1.8
+
+    /// Output multiplier for a building at the given upgrade level.
+    func upgradeMultiplier(forLevel level: Int) -> Double {
+        pow(upgradeMultiplierPerLevel, Double(max(0, level)))
+    }
+
+    // MARK: - Milestones (global multiplier from cumulative Moonlight)
+
+    /// Cumulative lifetime-Moonlight thresholds. Each crossed threshold grants a
+    /// permanent global multiplier bonus.
+    let milestoneMoonlightThresholds: [Double] = [
+        1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000,
+        1_000_000_000, 10_000_000_000, 100_000_000_000, 1_000_000_000_000
+    ]
+    /// Global multiplier bonus per milestone reached (+10%).
+    let milestoneBonusPerMilestone: Double = 0.10
+    /// Safety cap on the total global multiplier (never exceeds 5×).
+    let maxGlobalMultiplier: Double = 5.0
+
     // MARK: - Moon restoration (biome nodes)
 
-    /// Currency spent to restore the moon's biomes. Per the PRDs, Moonlight is
-    /// the progression currency that powers Moon Restoration.
+    /// Currency spent to restore the moon's biomes (Moonlight).
     let restorationCurrency: ResourceType = .moonlight
 
     /// The moon's biomes, restored in order by spending Moonlight. Restoring a
@@ -184,11 +221,13 @@ struct EconomyConfig: Sendable {
         return min(raised, 1.0)
     }
 
-    // MARK: - Offline earnings — see TECHNICAL_PRD.md §5
+    // MARK: - Offline earnings — see TECHNICAL_PRD.md §5 / MOONLOOM-PROMPT-004
 
     /// Default offline earning cap in hours for a new save.
     let defaultOfflineCapHours: Int = 2
-    /// Maximum offline cap reachable via upgrades/IAP.
+    /// Offline cap after the Offline Expansion (Phase 4 spec: 12h).
+    let expandedOfflineCapHours: Int = 12
+    /// Maximum offline cap reachable (Moonloom Pass, per PRD).
     let maxOfflineCapHours: Int = 48
     /// Efficiency multiplier applied to offline (vs. active) production.
     let offlineEfficiency: Double = 0.5
@@ -196,73 +235,9 @@ struct EconomyConfig: Sendable {
     /// Production tick interval in seconds (`TECHNICAL_PRD.md` §4).
     let tickInterval: Double = 0.1
 
-    /// Cadence of the gentle "production pulse" haptic/sound feedback, so it
-    /// fires at a cozy heartbeat rather than on every 0.1s tick.
+    /// Cadence of the gentle "production pulse" sound feedback, so it fires at a
+    /// cozy heartbeat rather than on every 0.1s tick.
     let productionPulseInterval: Double = 1.0
-
-    // MARK: - Upgrades (per-building multipliers)
-
-    /// Building counts at which successive upgrades for a tier unlock.
-    let upgradeUnlockThresholds: [Int] = [10, 25, 50, 100]
-    /// Output multiplier each purchased upgrade applies to its building.
-    let upgradeMultiplierBoost: Double = 2.0
-    /// Cost scaling for an upgrade relative to its building's base cost.
-    let upgradeCostFactor: Double = 12
-
-    /// Every upgrade across all 12 tiers, derived from `tiers` (so all economy
-    /// values remain centralised — no scattered literals).
-    var upgrades: [Upgrade] {
-        tiers.flatMap { tier -> [Upgrade] in
-            upgradeUnlockThresholds.enumerated().map { offset, threshold in
-                Upgrade(
-                    id: "\(tier.id)_mk\(offset + 2)",
-                    buildingID: tier.id,
-                    name: "\(tier.name) Mk\(offset + 2)",
-                    detail: "Doubles \(tier.name) output (requires \(threshold)).",
-                    requiredBuildingCount: threshold,
-                    cost: tier.baseCost * Double(threshold) * upgradeCostFactor,
-                    costCurrency: tier.costCurrency,
-                    multiplierBoost: upgradeMultiplierBoost
-                )
-            }
-        }
-    }
-
-    func upgrades(forBuilding buildingID: String) -> [Upgrade] {
-        upgrades.filter { $0.buildingID == buildingID }
-    }
-
-    func upgrade(id: String) -> Upgrade? {
-        upgrades.first { $0.id == id }
-    }
-
-    // MARK: - Milestones (global multipliers + collection unlocks)
-
-    /// Progression milestones. Building-count milestones reward growing your
-    /// factory; the restoration milestone rewards lasting progress.
-    var milestones: [Milestone] {
-        [
-            Milestone(id: "ms_buildings_10", name: "Cottage Industry",
-                      detail: "Own 10 buildings.",
-                      condition: .totalBuildings(10), globalMultiplierBonus: 0.10),
-            Milestone(id: "ms_buildings_25", name: "Dream Workshop",
-                      detail: "Own 25 buildings.",
-                      condition: .totalBuildings(25), globalMultiplierBonus: 0.15),
-            Milestone(id: "ms_buildings_50", name: "Dream Foundry",
-                      detail: "Own 50 buildings.",
-                      condition: .totalBuildings(50), globalMultiplierBonus: 0.25),
-            Milestone(id: "ms_spindle_1", name: "First Thread",
-                      detail: "Spin your first Dreamthread Spindle.",
-                      condition: .buildingCount(buildingID: "dreamthread_spindle", count: 1),
-                      globalMultiplierBonus: 0.10),
-            Milestone(id: "ms_moonlight_1k", name: "Glimmer",
-                      detail: "Earn 1K lifetime Moonlight.",
-                      condition: .lifetimeEarned(.moonlight, 1_000), globalMultiplierBonus: 0.20),
-            Milestone(id: "ms_restore_25", name: "Crescent",
-                      detail: "Restore the moon to 25%.",
-                      condition: .moonRestoration(0.25), globalMultiplierBonus: 0.25)
-        ]
-    }
 
     // MARK: - Dream Orders
 
@@ -276,6 +251,7 @@ struct EconomyConfig: Sendable {
     let orderBaseReward: Double = 3
     /// Additional Stardust reward per successive order.
     let orderRewardStep: Double = 2
-    /// Which resource each order requests, cycling by order index.
-    let orderRequestCycle: [ResourceType] = [.whispers, .whispers, .dreamthread, .moonlight]
+    /// Which resource each order requests, cycling by order index. All orders
+    /// request Moonlight (the production currency); rewards are Stardust.
+    let orderRequestCycle: [ResourceType] = [.moonlight]
 }

@@ -2,83 +2,82 @@ import XCTest
 @testable import MoonloomApp
 
 @MainActor
-final class UpgradeAndMilestoneTests: XCTestCase {
+final class UpgradeLevelTests: XCTestCase {
 
     private let config = EconomyConfig()
 
-    /// Build a state with explicit building counts and whisper balance.
-    private func makeState(buildings: [String: Int], whispers: Double) -> GameState {
+    /// A state with the first tier unlocked and a generous Moonlight balance.
+    private func makeState(moonlight: Double) -> GameState {
         var snapshot = GameSnapshot.newGame(config: config, now: Date(timeIntervalSince1970: 0))
-        snapshot.buildingCounts = buildings
-        snapshot.currencyAmounts = [ResourceType.whispers.rawValue: whispers]
-        snapshot.currencyLifetimeEarned = [ResourceType.whispers.rawValue: whispers]
+        snapshot.currencyAmounts = [ResourceType.moonlight.rawValue: moonlight]
+        snapshot.buildingCounts = ["whisper_net": 1]
         return GameState(config: config, snapshot: snapshot)
     }
 
-    // MARK: Upgrades
-
-    func testUpgradeCostMatchesConfigFormula() throws {
-        let upgrade = try XCTUnwrap(config.upgrade(id: "whisper_net_mk2"))
-        // baseCost 15 × threshold 10 × costFactor 12 = 1800.
-        XCTAssertEqual(upgrade.cost, 15 * 10 * 12, accuracy: 0.001)
-        XCTAssertEqual(upgrade.requiredBuildingCount, 10)
-        XCTAssertEqual(upgrade.multiplierBoost, 2.0)
-        XCTAssertEqual(upgrade.costCurrency, .whispers)
-    }
-
-    func testUpgradeLockedUntilBuildingThreshold() throws {
-        let upgrade = try XCTUnwrap(config.upgrade(id: "whisper_net_mk2"))
-        let few = makeState(buildings: ["whisper_net": 5], whispers: 10_000)
-        XCTAssertFalse(few.isUpgradeUnlocked(upgrade))
-        XCTAssertFalse(few.canBuyUpgrade(upgrade))
-
-        let enough = makeState(buildings: ["whisper_net": 10], whispers: 10_000)
-        XCTAssertTrue(enough.isUpgradeUnlocked(upgrade))
-        XCTAssertTrue(enough.canBuyUpgrade(upgrade))
-    }
-
-    func testPurchaseUpgradeDeductsCostAndAppliesMultiplier() throws {
-        let upgrade = try XCTUnwrap(config.upgrade(id: "whisper_net_mk2"))
-        let state = makeState(buildings: ["whisper_net": 10], whispers: 5_000)
-
+    func testUpgradeCostFollowsCurve() throws {
         let tier = try XCTUnwrap(config.tier(id: "whisper_net"))
-        let before = state.outputPerSecond(forTier: tier)
-
-        XCTAssertTrue(state.purchaseUpgrade(upgrade))
-        XCTAssertEqual(state.amount(of: .whispers), 5_000 - 1_800, accuracy: 0.001)
-        XCTAssertEqual(state.buildingMultiplier(for: "whisper_net"), 2.0, accuracy: 0.001)
-        XCTAssertEqual(state.outputPerSecond(forTier: tier), before * 2, accuracy: 0.0001)
-        // Cannot buy the same upgrade twice.
-        XCTAssertFalse(state.canBuyUpgrade(upgrade))
+        let state = makeState(moonlight: 1_000_000)
+        // Level 0 → 1 costs baseUpgradeCost (50).
+        XCTAssertEqual(state.upgradeCost(for: tier), tier.baseUpgradeCost, accuracy: 0.001)
+        XCTAssertTrue(state.upgradeBuilding(tier))
+        // Level 1 → 2 costs baseUpgradeCost × 1.8.
+        XCTAssertEqual(state.upgradeCost(for: tier), tier.baseUpgradeCost * 1.8, accuracy: 0.001)
     }
 
-    func testAvailableUpgradesExcludesPurchasedAndLocked() throws {
-        let state = makeState(buildings: ["whisper_net": 10], whispers: 100_000)
-        let available = state.availableUpgrades()
-        // whisper_net_mk2 (req 10) available; mk3 (req 25) still locked.
-        XCTAssertTrue(available.contains { $0.id == "whisper_net_mk2" })
-        XCTAssertFalse(available.contains { $0.id == "whisper_net_mk3" })
-    }
-
-    // MARK: Milestones
-
-    func testTotalBuildingsMilestoneRaisesGlobalMultiplier() {
-        let none = makeState(buildings: [:], whispers: 0)
-        XCTAssertEqual(none.globalMultiplier, 1.0, accuracy: 0.0001)
-
-        let ten = makeState(buildings: ["whisper_net": 10], whispers: 0)
-        // Only the "own 10 buildings" milestone (+0.10) is achieved.
-        XCTAssertEqual(ten.globalMultiplier, 1.10, accuracy: 0.0001)
-    }
-
-    func testMultiplierStackingOrder() throws {
-        // 10 nets + mk2 upgrade (×2) + totalBuildings(10) milestone (×1.10).
-        let state = makeState(buildings: ["whisper_net": 10], whispers: 5_000)
-        let upgrade = try XCTUnwrap(config.upgrade(id: "whisper_net_mk2"))
-        XCTAssertTrue(state.purchaseUpgrade(upgrade))
-
+    func testUpgradeMultipliesOutputBy1Point5PerLevel() throws {
         let tier = try XCTUnwrap(config.tier(id: "whisper_net"))
-        // 10 × 0.1 × 2 (upgrade) × 1.10 (global) × 1.0 (prestige) = 2.2.
-        XCTAssertEqual(state.outputPerSecond(forTier: tier), 2.2, accuracy: 0.0001)
+        let state = makeState(moonlight: 1_000_000)
+        let base = state.outputPerSecond(forTier: tier)   // level 0
+        XCTAssertTrue(state.upgradeBuilding(tier))         // level 1
+        XCTAssertEqual(state.buildingMultiplier(for: "whisper_net"), 1.5, accuracy: 0.0001)
+        XCTAssertEqual(state.outputPerSecond(forTier: tier), base * 1.5, accuracy: 0.0001)
+        XCTAssertTrue(state.upgradeBuilding(tier))         // level 2
+        XCTAssertEqual(state.outputPerSecond(forTier: tier), base * 1.5 * 1.5, accuracy: 0.0001)
+    }
+
+    func testCannotUpgradeBeyondMaxLevel() throws {
+        let tier = try XCTUnwrap(config.tier(id: "whisper_net"))
+        let state = makeState(moonlight: 1e18)
+        for _ in 0..<config.maxUpgradeLevel { XCTAssertTrue(state.upgradeBuilding(tier)) }
+        XCTAssertEqual(state.upgradeLevel(of: "whisper_net"), config.maxUpgradeLevel)
+        XCTAssertTrue(state.isMaxLevel(tier))
+        XCTAssertFalse(state.canUpgrade(tier))
+        XCTAssertFalse(state.upgradeBuilding(tier))
+    }
+
+    func testCannotUpgradeLockedTier() throws {
+        let tier = try XCTUnwrap(config.tier(id: "lullaby_well"))
+        let state = makeState(moonlight: 1e18) // well is locked
+        XCTAssertFalse(state.canUpgrade(tier))
+        XCTAssertFalse(state.upgradeBuilding(tier))
+    }
+}
+
+final class MilestoneCalculatorTests: XCTestCase {
+
+    private let calculator = MilestoneCalculator()
+    private let config = EconomyConfig()
+
+    func testNoMilestonesAtZeroMoonlight() {
+        XCTAssertEqual(calculator.reachedCount(lifetimeMoonlight: 0), 0)
+        XCTAssertEqual(calculator.multiplier(lifetimeMoonlight: 0), 1.0, accuracy: 0.0001)
+    }
+
+    func testThresholdsReached() {
+        XCTAssertEqual(calculator.reachedCount(lifetimeMoonlight: 999), 0)
+        XCTAssertEqual(calculator.reachedCount(lifetimeMoonlight: 1_000), 1)
+        XCTAssertEqual(calculator.reachedCount(lifetimeMoonlight: 50_000), 2) // ≥1K, ≥10K
+        XCTAssertEqual(calculator.reachedCount(lifetimeMoonlight: 1_000_000), 4)
+    }
+
+    func testMultiplierIsTenPercentPerMilestone() {
+        XCTAssertEqual(calculator.multiplier(reachedCount: 1), 1.10, accuracy: 0.0001)
+        XCTAssertEqual(calculator.multiplier(reachedCount: 3), 1.30, accuracy: 0.0001)
+    }
+
+    func testMultiplierClampedToSafetyCap() {
+        // 100 milestones would be ×11 without the cap.
+        XCTAssertEqual(calculator.multiplier(reachedCount: 100), config.maxGlobalMultiplier, accuracy: 0.0001)
+        XCTAssertLessThanOrEqual(calculator.multiplier(lifetimeMoonlight: 1e30), 5.0)
     }
 }
