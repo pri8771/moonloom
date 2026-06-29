@@ -29,6 +29,13 @@ struct RootView: View {
                 }
             }
         }
+        .alert("Data notice", isPresented: persistenceAlertPresented) {
+            Button("OK") {
+                container.clearPersistenceWarning()
+            }
+        } message: {
+            Text(container.persistenceWarning ?? "")
+        }
     }
 
     /// Drives the offline modal from the optional pending-earnings value.
@@ -37,6 +44,15 @@ struct RootView: View {
             get: { container.pendingOfflineEarnings != nil },
             set: { isPresented in
                 if !isPresented { container.pendingOfflineEarnings = nil }
+            }
+        )
+    }
+
+    private var persistenceAlertPresented: Binding<Bool> {
+        Binding(
+            get: { container.persistenceWarning != nil },
+            set: { isPresented in
+                if !isPresented { container.clearPersistenceWarning() }
             }
         )
     }

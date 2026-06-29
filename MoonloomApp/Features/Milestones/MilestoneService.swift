@@ -26,19 +26,19 @@ actor MilestoneService {
     private var calculator: MilestoneCalculator { MilestoneCalculator(config: EconomyConfig()) }
 
     /// Current persisted reached-count (0 if no row yet).
-    func currentReachedCount() -> Int {
-        record()?.reachedCount ?? 0
+    func currentReachedCount() throws -> Int {
+        (try record())?.reachedCount ?? 0
     }
 
     /// Current persisted global multiplier.
-    func currentMultiplier() -> Double {
-        calculator.multiplier(reachedCount: currentReachedCount())
+    func currentMultiplier() throws -> Double {
+        calculator.multiplier(reachedCount: try currentReachedCount())
     }
 
     /// Evaluate against lifetime Moonlight, persist any new progress, and report
     /// the result. Reached-count only ever increases.
-    func evaluate(lifetimeMoonlight: Double) -> MilestoneEvaluation {
-        let stored = record()
+    func evaluate(lifetimeMoonlight: Double) throws -> MilestoneEvaluation {
+        let stored = try record()
         let previous = stored?.reachedCount ?? 0
         let computed = calculator.reachedCount(lifetimeMoonlight: lifetimeMoonlight)
         let reached = max(previous, computed)
@@ -46,11 +46,11 @@ actor MilestoneService {
         if let stored {
             if stored.reachedCount != reached {
                 stored.reachedCount = reached
-                try? modelContext.save()
+                try modelContext.save()
             }
         } else {
             modelContext.insert(MilestoneRecord(reachedCount: reached))
-            try? modelContext.save()
+            try modelContext.save()
         }
 
         return MilestoneEvaluation(
@@ -61,16 +61,16 @@ actor MilestoneService {
     }
 
     /// Reset milestone progress to zero (used by a full save wipe).
-    func reset() {
-        if let stored = record() {
+    func reset() throws {
+        if let stored = try record() {
             stored.reachedCount = 0
         } else {
             modelContext.insert(MilestoneRecord(reachedCount: 0))
         }
-        try? modelContext.save()
+        try modelContext.save()
     }
 
-    private func record() -> MilestoneRecord? {
-        (try? modelContext.fetch(FetchDescriptor<MilestoneRecord>()))?.first
+    private func record() throws -> MilestoneRecord? {
+        try modelContext.fetch(FetchDescriptor<MilestoneRecord>()).first
     }
 }

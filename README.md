@@ -9,7 +9,7 @@
 **Genre:** Idle / Incremental
 **Platform:** iOS 17.0+
 **Engine:** SwiftUI + SwiftData + StoreKit 2
-**Status:** 🔴 Pre-Development (Documentation Phase)
+**Status:** 🟡 Active Development — playable early iOS prototype lives on PR #1
 
 ---
 
@@ -92,11 +92,47 @@ All monetization is cosmetic or convenience. No pay-to-win.
 
 ---
 
+## 📍 Current Repository Status
+
+`main` began as the documentation phase. The first app implementation lives in
+GitHub PR #1:
+
+https://github.com/pri8771/codex_app_3/pull/1
+
+That implementation includes the SwiftUI app shell, SwiftData persistence, core
+idle loop, 12 production tiers, building unlocks/upgrades, Dream Orders, Moon
+Restoration, offline earnings, prestige math, and XCTest coverage.
+
+The application is not yet production ready. StoreKit purchasing, local
+notifications, achievements, Lunar Codex permanent upgrades, final art/audio,
+full QA, accessibility polish, and App Store launch assets remain.
+
+Product note: the PRDs describe a multi-currency production chain, while the
+current prototype uses Moonlight as the single produced/spendable progression
+currency. Resolve that economy decision before balancing or beta.
+
+Notion build hub:
+https://app.notion.com/p/38eab1f2276581959e1ecc46b07557de
+
+See `docs/CURRENT_STATUS.md` for the latest engineering status.
+
+---
+
 ## 📂 Repository Structure
 
 ```
 codex_app_3/
+├── MoonloomApp.xcodeproj
+├── MoonloomApp/
+│   ├── App/
+│   ├── Core/
+│   ├── Features/
+│   ├── Presentation/
+│   ├── Resources/
+│   └── Services/
+├── MoonloomTests/
 ├── README.md
+├── project.yml
 └── docs/
     ├── prd/
     │   ├── TECHNICAL_PRD.md
@@ -110,6 +146,7 @@ codex_app_3/
     │   └── INVESTOR_DECK_PRD.md
     ├── PROJECT_TRACKER.md
     ├── BUG_TRACKER.md
+    ├── CURRENT_STATUS.md
     └── PROMPT_LOG.md
 ```
 

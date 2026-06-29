@@ -29,6 +29,8 @@ final class AppContainer: ObservableObject {
     @Published private(set) var isBootstrapped = false
     /// Transient banner text for a tier unlock or milestone (cleared by the UI).
     @Published var celebrationMessage: String?
+    /// User-visible warning when persistence fails to load, save, or reset.
+    @Published private(set) var persistenceWarning: String?
 
     private var engine: ProductionEngine?
 
@@ -65,15 +67,28 @@ final class AppContainer: ObservableObject {
         isBootstrapped = true
 
         let now = timeProvider.now()
-        let loaded = await repository.load()
+        let loaded: GameSnapshot?
+        do {
+            loaded = try await repository.load()
+        } catch {
+            loaded = nil
+            recordPersistenceWarning(
+                "Moonloom could not load your saved game. A fresh session was started.",
+                error: error
+            )
+        }
         if let loaded {
             gameState.restore(from: loaded)
         }
 
         // Apply the milestone global multiplier *before* crediting offline
         // earnings, so offline production reflects milestones.
-        let evaluation = await milestoneService.evaluate(lifetimeMoonlight: gameState.lifetimeMoonlight)
-        gameState.setGlobalMultiplier(evaluation.multiplier)
+        do {
+            let evaluation = try await milestoneService.evaluate(lifetimeMoonlight: gameState.lifetimeMoonlight)
+            gameState.setGlobalMultiplier(evaluation.multiplier)
+        } catch {
+            recordPersistenceWarning("Moonloom could not update milestone progress.", error: error)
+        }
 
         if let loaded {
             creditOfflineEarnings(since: loaded.lastActiveTimestamp, now: now)
@@ -203,8 +218,14 @@ final class AppContainer: ObservableObject {
     /// Erase all progress and start a fresh save (Settings → reset).
     func resetProgress() async {
         await engine?.stop()
-        await repository.deleteAll()
-        await milestoneService.reset()
+        do {
+            try await repository.deleteAll()
+            try await milestoneService.reset()
+        } catch {
+            recordPersistenceWarning("Moonloom could not erase the saved game.", error: error)
+            await startEngine()
+            return
+        }
         gameState.restore(from: .newGame(config: config, now: timeProvider.now()))
         gameState.setGlobalMultiplier(1.0)
         applySettingsToServices()
@@ -216,6 +237,10 @@ final class AppContainer: ObservableObject {
     func persistSettings() async {
         applySettingsToServices()
         await save()
+    }
+
+    func clearPersistenceWarning() {
+        persistenceWarning = nil
     }
 
     // MARK: - Scene lifecycle
@@ -295,13 +320,17 @@ final class AppContainer: ObservableObject {
         isEvaluatingMilestones = true
         let lifetime = gameState.lifetimeMoonlight
         Task {
-            let evaluation = await milestoneService.evaluate(lifetimeMoonlight: lifetime)
-            gameState.setGlobalMultiplier(evaluation.multiplier)
-            if evaluation.newlyReached > 0 {
-                haptics.success()
-                audio.playSFX("milestone")
-                celebrationMessage = String(
-                    format: "Milestone! Global production ×%.2f", evaluation.multiplier)
+            do {
+                let evaluation = try await milestoneService.evaluate(lifetimeMoonlight: lifetime)
+                gameState.setGlobalMultiplier(evaluation.multiplier)
+                if evaluation.newlyReached > 0 {
+                    haptics.success()
+                    audio.playSFX("milestone")
+                    celebrationMessage = String(
+                        format: "Milestone! Global production ×%.2f", evaluation.multiplier)
+                }
+            } catch {
+                recordPersistenceWarning("Moonloom could not update milestone progress.", error: error)
             }
             isEvaluatingMilestones = false
         }
@@ -324,6 +353,14 @@ final class AppContainer: ObservableObject {
     }
 
     private func save() async {
-        await repository.save(gameState.snapshot(now: timeProvider.now()))
+        do {
+            try await repository.save(gameState.snapshot(now: timeProvider.now()))
+        } catch {
+            recordPersistenceWarning("Moonloom could not save your latest progress.", error: error)
+        }
+    }
+
+    private func recordPersistenceWarning(_ message: String, error: Error) {
+        persistenceWarning = "\(message) \(error.localizedDescription)"
     }
 }

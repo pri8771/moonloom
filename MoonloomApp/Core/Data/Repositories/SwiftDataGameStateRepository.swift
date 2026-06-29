@@ -9,12 +9,12 @@ import SwiftData
 @ModelActor
 actor SwiftDataGameStateRepository: GameStateRepository {
 
-    func load() async -> GameSnapshot? {
-        let currencies = (try? modelContext.fetch(FetchDescriptor<CurrencyRecord>())) ?? []
-        let buildings = (try? modelContext.fetch(FetchDescriptor<BuildingRecord>())) ?? []
-        let upgrades = (try? modelContext.fetch(FetchDescriptor<UpgradeRecord>())) ?? []
-        let prestige = (try? modelContext.fetch(FetchDescriptor<PrestigeRecord>()))?.first
-        let settings = (try? modelContext.fetch(FetchDescriptor<SettingsRecord>()))?.first
+    func load() async throws -> GameSnapshot? {
+        let currencies = try modelContext.fetch(FetchDescriptor<CurrencyRecord>())
+        let buildings = try modelContext.fetch(FetchDescriptor<BuildingRecord>())
+        let upgrades = try modelContext.fetch(FetchDescriptor<UpgradeRecord>())
+        let prestige = try modelContext.fetch(FetchDescriptor<PrestigeRecord>()).first
+        let settings = try modelContext.fetch(FetchDescriptor<SettingsRecord>()).first
 
         // No save yet: signal "new game" to the caller.
         guard let prestige, let settings else { return nil }
@@ -58,11 +58,11 @@ actor SwiftDataGameStateRepository: GameStateRepository {
         )
     }
 
-    func save(_ snapshot: GameSnapshot) async {
+    func save(_ snapshot: GameSnapshot) async throws {
         let now = snapshot.lastActiveTimestamp
 
         // Currencies (upsert by type).
-        let existingCurrencies = (try? modelContext.fetch(FetchDescriptor<CurrencyRecord>())) ?? []
+        let existingCurrencies = try modelContext.fetch(FetchDescriptor<CurrencyRecord>())
         var currencyByType = Dictionary(existingCurrencies.map { ($0.type, $0) }) { first, _ in first }
         for (type, amount) in snapshot.currencyAmounts {
             let lifetime = snapshot.currencyLifetimeEarned[type] ?? amount
@@ -80,7 +80,7 @@ actor SwiftDataGameStateRepository: GameStateRepository {
 
         // Buildings (upsert by id). Tier metadata is sourced from EconomyConfig.
         let config = EconomyConfig()
-        let existingBuildings = (try? modelContext.fetch(FetchDescriptor<BuildingRecord>())) ?? []
+        let existingBuildings = try modelContext.fetch(FetchDescriptor<BuildingRecord>())
         var buildingByID = Dictionary(existingBuildings.map { ($0.id, $0) }) { first, _ in first }
         for (id, count) in snapshot.buildingCounts {
             let definition = config.tier(id: id)
@@ -105,7 +105,7 @@ actor SwiftDataGameStateRepository: GameStateRepository {
 
         // Upgrade levels (upsert by building id). Buildings missing from the
         // snapshot (e.g. cleared by prestige) are reset to level 0.
-        let existingUpgrades = (try? modelContext.fetch(FetchDescriptor<UpgradeRecord>())) ?? []
+        let existingUpgrades = try modelContext.fetch(FetchDescriptor<UpgradeRecord>())
         var upgradeByID = Dictionary(existingUpgrades.map { ($0.buildingID, $0) }) { first, _ in first }
         for record in existingUpgrades where (snapshot.upgradeLevels[record.buildingID] ?? 0) == 0 {
             record.level = 0
@@ -121,7 +121,7 @@ actor SwiftDataGameStateRepository: GameStateRepository {
         }
 
         // Prestige / run progress (single row).
-        let prestige = (try? modelContext.fetch(FetchDescriptor<PrestigeRecord>()))?.first
+        let prestige = try modelContext.fetch(FetchDescriptor<PrestigeRecord>()).first
         if let prestige {
             prestige.resetCount = snapshot.resetCount
             prestige.totalLucidShardsEarned = snapshot.totalLucidShardsEarned
@@ -146,7 +146,7 @@ actor SwiftDataGameStateRepository: GameStateRepository {
         }
 
         // Settings (single row).
-        let settings = (try? modelContext.fetch(FetchDescriptor<SettingsRecord>()))?.first
+        let settings = try modelContext.fetch(FetchDescriptor<SettingsRecord>()).first
         if let settings {
             settings.isMusicEnabled = snapshot.isMusicEnabled
             settings.isSFXEnabled = snapshot.isSFXEnabled
@@ -165,16 +165,16 @@ actor SwiftDataGameStateRepository: GameStateRepository {
             ))
         }
 
-        try? modelContext.save()
+        try modelContext.save()
     }
 
-    func deleteAll() async {
-        try? modelContext.delete(model: CurrencyRecord.self)
-        try? modelContext.delete(model: BuildingRecord.self)
-        try? modelContext.delete(model: UpgradeRecord.self)
-        try? modelContext.delete(model: PrestigeRecord.self)
-        try? modelContext.delete(model: SettingsRecord.self)
+    func deleteAll() async throws {
+        try modelContext.delete(model: CurrencyRecord.self)
+        try modelContext.delete(model: BuildingRecord.self)
+        try modelContext.delete(model: UpgradeRecord.self)
+        try modelContext.delete(model: PrestigeRecord.self)
+        try modelContext.delete(model: SettingsRecord.self)
         // MilestoneRecord is owned by MilestoneService (reset via its own reset()).
-        try? modelContext.save()
+        try modelContext.save()
     }
 }
