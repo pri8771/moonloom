@@ -5,6 +5,7 @@
 **Active development branch:** `codex/production-readiness`
 **Base implementation branch:** `claude/moonloom-idle-game-9l8e5p`
 **Open implementation PR:** https://github.com/pri8771/codex_app_3/pull/1
+**Production-readiness PR:** https://github.com/pri8771/codex_app_3/pull/2
 **Notion build hub:** https://app.notion.com/p/38eab1f2276581959e1ecc46b07557de
 
 ## Summary
@@ -70,8 +71,8 @@ coverage.
 
 ## Immediate Next Steps
 
-1. Open/stack a PR against the
-   implementation branch or `main`.
+1. Review and merge PR #2 into the implementation branch, then update/merge
+   PR #1 into `main`.
 2. Decide and document the canonical economy model.
 3. Define SwiftData migration, backup, and corrupted-store recovery behavior.
 4. Implement Lunar Codex and StoreKit before calling the app production-ready.
