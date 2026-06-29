@@ -18,29 +18,7 @@
 
 ## Active Bugs
 
-### BUG-002: GitHub Actions CI not yet verified on remote
-
-**Severity:** P2
-**Type:** Performance (process / CI)
-**Status:** 🔴 Open
-**Date:** 2026-06-29
-**Device:** GitHub Actions
-**App Version:** 1.0 / Build 1
-
-#### Steps to Reproduce
-1. Open GitHub PR #1 / the production-readiness branch.
-2. Inspect status checks.
-
-#### Expected
-GitHub Actions runs `xcodebuild build` and `xcodebuild test` for every PR.
-
-#### Actual
-CI workflow has been added on `codex/production-readiness`, but has not yet been
-verified by a remote push.
-
-#### Notes
-Next action: push `codex/production-readiness` and verify the workflow runs
-green on GitHub.
+No active P0/P1/P2 bugs are currently known on `codex/production-readiness`.
 
 ---
 
@@ -49,6 +27,7 @@ green on GitHub.
 | Bug ID | Title | Severity | Type | Status | Date | Device | Steps | Expected | Actual | Root Cause | Fix | Fixed Date |
 |--------|-------|----------|------|--------|------|--------|-------|----------|--------|-----------|-----|-----------|
 | BUG-001 | Foundation build/tests not executed in authoring environment | P2 | Process / CI | 🟢 | 2026-06-28 | N/A | Inspect foundation commits | Build/test should run on macOS | Authoring environment lacked Xcode | No macOS toolchain in original authoring session | Verified local Xcode build/test on 2026-06-29; added CI workflow on `codex/production-readiness` | 2026-06-29 |
+| BUG-002 | GitHub Actions CI not verified on remote | P2 | Process / CI | 🟢 | 2026-06-29 | GitHub Actions | Push `codex/production-readiness` | GitHub Actions runs build/test for the branch | CI workflow did not exist before this branch | Missing iOS CI workflow | Added `.github/workflows/ios-ci.yml`, pushed branch, and verified `iOS CI` passed remotely | 2026-06-29 |
 | BUG-003 | Number formatter renders 999,999 as 1000K | P2 | UI / Logic | 🟢 | 2026-06-29 | iPhone 17 simulator | Run `NumberAbbreviatorTests.testRolloverDoesNotProduce1000K` | `999_999` renders as `1M` | Formatter returned `1000K` | Rollover guard checked unrounded scaled value before display rounding | Roll up suffix when rounded scaled value reaches 1000 | 2026-06-29 |
 | BUG-004 | SwiftData save/load/delete failures are silently ignored | P1 | Data | 🟢 | 2026-06-29 | iPhone 17 simulator | Inspect repository and milestone persistence paths | Persistence errors should propagate and be visible | `try?` discarded fetch/save/delete errors | Repository and milestone service APIs swallowed thrown SwiftData failures | Converted persistence APIs to throw, added root data warning, and covered save/load/delete with SwiftData tests | 2026-06-29 |
 
@@ -113,9 +92,9 @@ green on GitHub.
 | Metric | Count |
 |--------|-------|
 | Total Filed | 4 |
-| Open 🔴 | 1 |
+| Open 🔴 | 0 |
 | In Progress 🟡 | 0 |
-| Closed 🟢 | 3 |
+| Closed 🟢 | 4 |
 | Deferred ⚫ | 0 |
 | P0 Crashes | 0 |
 | P1 Major | 0 |

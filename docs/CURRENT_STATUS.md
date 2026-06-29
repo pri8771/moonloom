@@ -24,6 +24,8 @@ coverage.
 - Xcode 26.6 was available locally.
 - `xcodebuild build` succeeded against an available iPhone 17 simulator.
 - Simulator launch succeeded and rendered the Factory screen.
+- GitHub Actions `iOS CI` has been added and verified green on
+  `codex/production-readiness`.
 - `xcodebuild test` initially ran 87 tests with 1 failure:
   `NumberAbbreviatorTests.testRolloverDoesNotProduce1000K`.
 - The formatter rollover bug has been fixed on `codex/production-readiness`.
@@ -54,7 +56,6 @@ coverage.
 ## Not Yet Production Ready
 
 - PR #1 is not merged into `main`.
-- GitHub Actions CI was missing; `ios-ci.yml` has now been added on this branch.
 - StoreKit 2 purchase flow is not implemented.
 - Local notifications are not implemented.
 - Lunar Codex permanent upgrades are not implemented.
@@ -69,9 +70,8 @@ coverage.
 
 ## Immediate Next Steps
 
-1. Push `codex/production-readiness` and verify the remote GitHub Actions run.
-2. Open/stack a PR against the
+1. Open/stack a PR against the
    implementation branch or `main`.
-3. Decide and document the canonical economy model.
-4. Define SwiftData migration, backup, and corrupted-store recovery behavior.
-5. Implement Lunar Codex and StoreKit before calling the app production-ready.
+2. Decide and document the canonical economy model.
+3. Define SwiftData migration, backup, and corrupted-store recovery behavior.
+4. Implement Lunar Codex and StoreKit before calling the app production-ready.
