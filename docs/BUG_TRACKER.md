@@ -2,7 +2,7 @@
 
 **Game:** Moonloom: Idle Dream Factory
 **Platform:** iOS 17.0+
-**Last Updated:** 2026-06-27
+**Last Updated:** 2026-06-28
 
 ---
 
@@ -18,7 +18,37 @@
 
 ## Active Bugs
 
-*No active bugs — development not started.*
+### BUG-001: Foundation build/tests not executed in authoring environment
+
+**Severity:** P2
+**Type:** Performance (process / CI)
+**Status:** 🔴 Open
+**Date:** 2026-06-28
+**Device:** N/A (Linux authoring session)
+**App Version:** 1.0 / Build 1
+
+#### Steps to Reproduce
+1. Inspect the MOONLOOM-PROMPT-001 foundation commit.
+2. Note it was authored in a Linux container with no Swift/Xcode toolchain.
+
+#### Expected
+`xcodebuild build` and `xcodebuild test` run green for the `MoonloomApp` scheme.
+
+#### Actual
+The toolchain is macOS-only and unavailable in the authoring session, so the
+project was written for correctness but not compiled/tested there.
+
+#### Notes
+Next action: open `MoonloomApp.xcodeproj` in Xcode 16 (iOS 17 simulator) and run
+build + tests (commands in `MoonloomApp/README.md`); file any compile issues as
+P0/P1 and resolve before MOONLOOM-PROMPT-002. The project uses file-system
+synchronized groups (`objectVersion 77`), so Xcode 16+ is required; `project.yml`
+allows regeneration via XcodeGen if needed.
+
+#### Risk register items addressed by the foundation
+- **RISK-001 / RISK-002** (timer drift / resume double-tick): `ProductionEngine`
+  computes delta-time from an injected `TimeProvider` and ignores large gaps.
+- **RISK-008** (reset/tick race): the engine is stopped before a prestige reset.
 
 ---
 
@@ -88,8 +118,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total Filed | 0 |
-| Open 🔴 | 0 |
+| Total Filed | 1 |
+| Open 🔴 | 1 |
 | In Progress 🟡 | 0 |
 | Closed 🟢 | 0 |
 | Deferred ⚫ | 0 |
@@ -99,4 +129,4 @@
 ---
 
 *Bugs must be filed immediately when discovered. Never ship with P0 or P1 bugs.*
-*Last Updated: 2026-06-27*
+*Last Updated: 2026-06-28*

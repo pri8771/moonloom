@@ -281,7 +281,7 @@ Then proceed with the requested phase.
 ---
 
 ### MOONLOOM-PROMPT-001: Project Intake and Foundation
-**Date:** 2026-06-27 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E002 | **Status:** 📅 Queued
+**Date:** 2026-06-28 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E002 | **Status:** ✅ Used
 
 ```
 Implement Phase 1 for Moonloom: Idle Dream Factory.
@@ -332,10 +332,51 @@ Acceptance criteria:
 - Project tracker, bug tracker, and prompt log updated.
 ```
 
+**Outcome (2026-06-28):** Foundation implemented as the `MoonloomApp/` Swift
+package + `MoonloomApp.xcodeproj` (Xcode 16, iOS 17, file-system synchronized
+groups; `project.yml` provided for XcodeGen regeneration).
+
+Delivered:
+- **App shell & navigation** — `@main MoonloomApp`, `AppContainer` (lightweight
+  DI + lifecycle), `RootView` 4-tab `TabView`: **Factory / Moon Restoration /
+  Shop / Settings**. (Acceptance: navigation between the four screens. The
+  documented Upgrades/Regions/Prestige destinations are folded into these four
+  per the latest foundation spec — Prestige lives on the Moon Restoration tab;
+  building purchases live on the Factory tab.)
+- **Central state** — `GameState` (`@MainActor ObservableObject`) holding 5
+  currencies, building counts, upgrade flags, moon restoration, prestige data,
+  and settings; with a `Codable`/`Sendable` `GameSnapshot` projection.
+- **Economy config** — `EconomyConfig` with all **12 production tiers**
+  (Whisper Nets → Moonheart Engine), exponential cost curve `baseCost·1.15^n`.
+- **Production engine** — `actor ProductionEngine` (0.1 s tick, delta-time from
+  an injected `TimeProvider` to avoid drift/double-tick — RISK-001/002).
+- **Offline earnings** — `OfflineEarningsCalculator` (cap + 0.5 efficiency,
+  TECHNICAL_PRD §5) with a "Welcome back" modal.
+- **Prestige** — `PrestigeCalculator` + `GameState.applyPrestige` (New Moon
+  Reset: zero soft currencies/buildings, keep Stardust/Lucid Shards/permanent
+  upgrades) and a confirmation flow.
+- **Persistence** — SwiftData `@Model` records (Currency/Building/Prestige/
+  Settings) behind a `@ModelActor` `GameStateRepository`; safe in-memory
+  fallback so a corrupt store can't crash launch.
+- **Services** — `NumberAbbreviator` (K/M/B/T/Qa…), `HapticsService`, and
+  documented, inert `AudioService` / `AnalyticsService` stubs.
+- **Tests** — XCTest suites for number formatting (incl. `1000→"1K"`,
+  `1e6→"1M"`, `1e12→"1T"`), offline earnings, prestige, economy, and GameState.
+
+Verification note: the build/test toolchain (`xcodebuild`/Xcode) is macOS-only
+and was **not available in this Linux session**, so the project was authored for
+correctness but `xcodebuild build`/`test` were not executed here. Run them on a
+macOS + Xcode 16 machine (commands in `MoonloomApp/README.md`). Tracked as
+BUG-001 (process note).
+
+Deferred (clearly isolated, safe stubs / later epics): live StoreKit purchasing,
+audio playback, local notifications, achievements, full story sequence,
+cosmetic theming.
+
 ---
 
 ### MOONLOOM-PROMPT-002: Core Idle Economy Engine
-**Date:** 2026-06-27 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E004 | **Status:** 📅 Queued
+**Date:** 2026-06-28 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E004 | **Status:** ✅ Used
 
 ```
 Implement Phase 2 for Moonloom: the core idle economy engine.
@@ -412,10 +453,51 @@ Acceptance criteria:
 - Trackers updated.
 ```
 
+**Refined brief (2026-06-28):** Phase 2 was run with an expanded, playability-
+focused brief — prove "is the idle reward loop satisfying?" by building ONE
+complete loop: auto-generation, a production station + upgrade path, an
+order/request system, a milestone-driven collection unlock, offline earnings
+display, guided first-5-minutes progression, and reward/upgrade visual feedback.
+(Monetization, multi-prestige, dozens of buildings, and live events were
+explicitly out of scope.)
+
+**Outcome (2026-06-28):** Implemented on top of the Phase 1 foundation.
+
+Economy engine (UI-independent, in `Core/Domain`):
+- Full multiplier-stacked production: `count × baseCPS × upgradeMult ×
+  globalMult × prestigeMult` (`GameState.outputPerSecond(forTier:)`).
+- **Upgrades**: `Upgrade` model + `EconomyConfig.upgrades` (4 per tier,
+  unlock at 10/25/50/100 owned, ×2 each, cost from config). `GameState`
+  purchase/unlock/affordability APIs; `UpgradeRecord` persistence.
+- **Milestones**: `Milestone` model + catalog driving the global multiplier and
+  the Dreamthread "collection unlock"; `isAchieved`/`globalMultiplier`.
+- **Dream Orders**: `DreamOrder` + deterministic `OrderGenerator` (sequential
+  quest chain, Stardust rewards); `fulfillOrder` spends request → grants reward
+  → advances the chain; `ordersFulfilled` persisted.
+- **Guidance**: `ProgressionGuide.nextObjective()` gives the single best next
+  step for the first five minutes.
+- Engine APIs added: `canBuyBuilding/canBuyUpgrade`, `availableUpgrades`,
+  `calculateProductionRates`, serialize/deserialize via `GameSnapshot`.
+
+UI (live, wired to the engine):
+- `FactoryView` shows live production, global multiplier, a guidance banner, and
+  Orders/Upgrades entry points with "ready" badges. `BuildingRowView` uses the
+  full rate and animates counts.
+- `UpgradesView` (before → after rate feedback), `OrdersView` (progress + reward
+  burst animation), `RewardBurstView` celebration.
+
+Tests added: `UpgradeAndMilestoneTests`, `OrderTests`, `EconomySimulationTests`
+(initial state, single-tick generation, deterministic ticks, no NaN/Infinity,
+progression through the first 3 tiers, multiplier stacking, snapshot round-trip).
+
+Verification note: same as BUG-001 — authored on Linux without an Xcode
+toolchain, so `xcodebuild build`/`test` were not executed here; run on macOS +
+Xcode 16.
+
 ---
 
 ### MOONLOOM-PROMPT-003: Main Factory UI and Upgrade Flow
-**Date:** 2026-06-27 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E007 | **Status:** 📅 Queued
+**Date:** 2026-06-28 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E007 | **Status:** ✅ Used
 
 ```
 Implement Phase 3 for Moonloom: playable factory UI and upgrade purchasing.
@@ -456,10 +538,51 @@ Acceptance criteria:
 - App builds. Tests pass. Trackers updated.
 ```
 
+**Refined brief (2026-06-28):** Phase 3 was run with a polish-focused brief —
+prove "does the factory feel cozy and alive?" via animation/feedback rather than
+new systems. (No StoreKit, events, or prestige layers.)
+
+**Outcome (2026-06-28):** Polished the Phase 2 loop into a cozy, alive factory.
+
+Note on currency: the brief said "Mooncoins," which is not a documented
+currency. Per the PRDs, **Moonlight** is the progression currency that powers
+Moon Restoration, and the Non-Technical PRD describes restoring the moon **biome
+by biome** — so restoration nodes were implemented as biomes costing Moonlight.
+
+Delivered:
+- **Moon Restoration reworked to real, spendable nodes**: `RestorationNode`
+  model + 8 biomes in `EconomyConfig` (escalating Moonlight costs). `moonRestoration`
+  is now the fraction of biomes restored; `GameState.restoreNode` spends Moonlight,
+  reveals a story beat, and updates best-run. `MoonRestorationView` shows
+  restored/next/locked biomes with a sparkle celebration. Persistence migrated
+  (`PrestigeRecord.restoredNodeIDs`, `GameSnapshot.restoredNodeIDs`).
+- **All 12 tiers always visible**; locked tiers render greyed with a
+  "Next unlock at X" hint (`BuildingRowView`).
+- **Building visual states**: idle (dim) / producing (pulsing glow) / maxed
+  (golden crown + glow).
+- **Animated counters** (currency HUD + per-tier rate via `.contentTransition(.numericText())`),
+  **bouncing "order ready" badge**, **upgrade confirmation flash**, and a
+  **staggered offline-earnings reveal**.
+- **Tier-unlock / milestone celebrations** (toast + haptic + sound) detected in
+  `AppContainer`, plus a gentle ~1Hz production *sound* pulse (haptics reserved
+  for discrete events to protect battery).
+- **Sound + haptic hooks** on purchase, upgrade, order, unlock, milestone, and
+  biome restore via `AudioService`/`HapticsService`.
+- **Smarter `ProgressionGuide`** (now suggests restoring a biome / saving Moonlight).
+- **Reduced-motion support** throughout (animations gated by
+  `accessibilityReduceMotion`).
+
+Tests added/updated: `MoonRestorationTests` (node costs, sequential restore,
+spend, fraction, prestige clear), `SettingsAndRateTests` (settings persistence,
+production-rate accuracy at various upgrade/milestone levels).
+
+Verification note: same as BUG-001 — authored on Linux without an Xcode
+toolchain; `xcodebuild build`/`test` not executed here.
+
 ---
 
 ### MOONLOOM-PROMPT-004: Offline Earnings
-**Date:** 2026-06-27 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E005 | **Status:** 📅 Queued
+**Date:** 2026-06-28 | **Phase:** Implementation | **Tool:** Claude Code | **Epic:** E005 | **Status:** ✅ Used
 
 ```
 Implement Phase 4 for Moonloom: offline earnings.
@@ -500,6 +623,52 @@ Acceptance criteria:
 - Rewards persist after claiming.
 - Tests pass. App builds. Trackers updated.
 ```
+
+**Refined brief (2026-06-28) — "Full Economy Expansion":** the user expanded
+Phase 4 into a five-part economy pass (all 12 tiers with unlock costs; leveled
+per-building upgrades; a `MilestoneService` actor with SwiftData; offline
+per-building breakdown; an economy balance test suite), explicitly overriding
+the narrower offline-only prompt.
+
+**Economy-model decision:** the brief specifies "Moonlight unlock costs" and
+"no building produces 0 Moonlight" with a per-building Moonlight breakdown — a
+**single-Moonlight production economy**. This diverges from the PRD's
+multi-currency chain (whispers → dreamthread → moonlight). Per the user's
+explicit, repeated direction ("the full spec overrides"), all 12 tiers now
+produce **Moonlight**, with Moonlight-denominated unlock/buy/upgrade costs and
+milestone thresholds. The canonical README tier *names* were kept (the brief's
+alt names conflicted with the PRD and the built game); Stardust still comes from
+orders and Lucid Shards from prestige. Documented here rather than rewriting the
+PRDs.
+
+**Outcome (2026-06-28):**
+- **All 12 tiers** now have explicit Moonlight `unlockCost` + `baseUpgradeCost`
+  in `EconomyConfig`; tiers unlock **sequentially** (no skipping) by paying the
+  unlock cost; each produces Moonlight at an escalating base rate.
+- **Per-building upgrades (levels 0…10)**: each level ×1.5 (stacking), cost
+  `baseUpgradeCost × 1.8^level`. `GameState.upgradeBuilding`,
+  `buildingMultiplier = 1.5^level`; `UpgradesView` shows level, current ×, cost
+  to next, and before → after rate. `UpgradeRecord` stores level.
+- **MilestoneService (actor + SwiftData)**: cumulative-Moonlight thresholds
+  (1K…1T), +10% global per milestone, **capped at 5×**, persisted monotonically
+  in `MilestoneRecord`. Pure `MilestoneCalculator` does the math; `AppContainer`
+  re-evaluates ~1×/s and applies the multiplier to the production tick + HUD.
+- **Offline per-building breakdown**: `OfflineEarningsCalculator` now returns a
+  per-tier breakdown + most-productive building + cap-applied flag (multipliers
+  baked into the per-tier rates); the Welcome-back modal shows the breakdown.
+- **Economy balance pass**: `EconomyBalanceTests` verifies 12 tiers, no zero
+  base rate, monotonic costs, no Double overflow at max upgrade level, and the
+  ≤5× milestone cap.
+
+Tests updated/added: `GameStateTests`, `EconomySimulationTests`, `OrderTests`,
+`SettingsAndRateTests`, `UpgradeAndMilestoneTests` (now upgrade-level +
+`MilestoneCalculator`), `OfflineEarningsCalculatorTests` (per-building),
+`EconomyBalanceTests`.
+
+Verification note: same as BUG-001 — authored on Linux without an Xcode
+toolchain; `xcodebuild build`/`test` not executed here. This phase changed the
+persistence schema (UpgradeRecord, MilestoneRecord, PrestigeRecord), so a
+SwiftData migration check on-device is warranted.
 
 ---
 
@@ -788,10 +957,10 @@ Return:
 | Ideation (ChatGPT) | 2 | 2 | 0 |
 | Architecture | 2 | 0 | 2 |
 | Claude Code Universal | 1 | 0 | 1 |
-| Claude Code Implementation | 8 | 0 | 8 |
+| Claude Code Implementation | 8 | 4 | 4 |
 | Claude Code Audit | 1 | 0 | 1 |
-| **Total** | **14** | **2** | **12** |
+| **Total** | **14** | **6** | **8** |
 
 ---
 
-*Last updated: 2026-06-27 — ChatGPT implementation prompts added*
+*Last updated: 2026-06-28 — MOONLOOM-PROMPT-004 (full economy expansion) implemented*

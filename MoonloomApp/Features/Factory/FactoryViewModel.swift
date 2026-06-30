@@ -1,0 +1,59 @@
+import Foundation
+
+/// Presentation logic for the Factory screen. A value type computed from the
+/// observed `GameState`, keeping simulation/derivation out of the SwiftUI view.
+@MainActor
+struct FactoryViewModel {
+    private let gameState: GameState
+    private let formatter = NumberAbbreviator()
+
+    init(gameState: GameState) {
+        self.gameState = gameState
+    }
+
+    /// Headline moonlight-per-second across the factory.
+    var moonlightPerSecondText: String {
+        formatter.string(from: gameState.outputPerSecond(of: .moonlight))
+    }
+
+    var hasAnyBuilding: Bool {
+        gameState.buildingCounts.values.contains { $0 > 0 }
+    }
+
+    /// Global production multiplier from milestones, e.g. "×1.25".
+    var globalMultiplierText: String {
+        String(format: "×%.2f", gameState.globalMultiplier)
+    }
+
+    /// Whether the global multiplier is above the 1.0 baseline (worth showing).
+    var hasGlobalBonus: Bool {
+        gameState.globalMultiplier > 1.0001
+    }
+
+    /// Number of cumulative-Moonlight milestones reached so far.
+    var milestoneCount: Int {
+        MilestoneCalculator(config: gameState.config)
+            .reachedCount(lifetimeMoonlight: gameState.lifetimeMoonlight)
+    }
+
+    /// Count of buildings that can be upgraded right now (for the badge).
+    var availableUpgradeCount: Int {
+        gameState.upgradeableTiers().count
+    }
+
+    /// Count of tiers the player can unlock right now (for the badge).
+    var unlockableTierCount: Int {
+        gameState.config.tiers.filter { gameState.canUnlockTier($0) }.count
+    }
+
+    /// Whether an order is ready to fulfil right now (for the Orders badge).
+    var hasOrderReady: Bool {
+        guard let order = gameState.activeOrder else { return false }
+        return gameState.canFulfill(order)
+    }
+
+    /// The next-step hint for guided early progression, or `nil`.
+    var nextObjective: String? {
+        ProgressionGuide(state: gameState).nextObjective()
+    }
+}
