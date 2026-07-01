@@ -42,10 +42,13 @@ struct NumberAbbreviator: Sendable {
         // Determine the thousands-grouping index (1 = K, 2 = M, ...).
         var magnitude = Int(floor(log10(value) / 3))
         var scaled = value / pow(1_000, Double(magnitude))
-        // Guard against rounding pushing the mantissa to 1000 (e.g. 999_999 →
-        // "1000K"): roll up to the next suffix instead.
-        if scaled >= 1_000 && magnitude < Self.suffixes.count {
+        // Guard against formatting-time rounding pushing the mantissa to 1000
+        // (e.g. 999_999 -> 999.999K -> "1000K"): roll up to the next suffix.
+        let roundingFactor = pow(10, Double(maximumFractionDigits))
+        let roundedScaled = (scaled * roundingFactor).rounded(.toNearestOrEven) / roundingFactor
+        if roundedScaled >= 1_000 {
             magnitude += 1
+            guard magnitude <= Self.suffixes.count else { return scientific(value) }
             scaled = value / pow(1_000, Double(magnitude))
         }
         if magnitude >= 1 && magnitude <= Self.suffixes.count {

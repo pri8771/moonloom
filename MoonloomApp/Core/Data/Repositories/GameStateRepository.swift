@@ -5,9 +5,9 @@ import Foundation
 /// never touch `@Model` objects across actor boundaries.
 protocol GameStateRepository: Sendable {
     /// Load the saved snapshot, or `nil` if there is no save yet.
-    func load() async -> GameSnapshot?
+    func load() async throws -> GameSnapshot?
     /// Persist the given snapshot (upsert).
-    func save(_ snapshot: GameSnapshot) async
+    func save(_ snapshot: GameSnapshot) async throws
     /// Delete all saved data (used by "reset progress").
-    func deleteAll() async
+    func deleteAll() async throws
 }

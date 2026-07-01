@@ -9,7 +9,7 @@
 **Genre:** Idle / Incremental
 **Platform:** iOS 17.0+
 **Engine:** SwiftUI + SwiftData + StoreKit 2
-**Status:** 🔴 Pre-Development (Documentation Phase)
+**Status:** 🟢 Feature-complete — ~85% production ready (full idle loop, prestige + Lunar Codex, achievements, daily rewards, StoreKit 2, cosmetic themes, notifications). See `docs/CURRENT_STATUS.md`.
 
 ---
 
@@ -92,11 +92,55 @@ All monetization is cosmetic or convenience. No pay-to-win.
 
 ---
 
+## 📍 Current Repository Status
+
+The app is **feature-complete and ~85% production ready** on
+`codex/production-readiness`. Implemented end-to-end: the SwiftUI app shell,
+SwiftData persistence (schema v2 + lightweight migration), the core idle loop,
+12 production tiers, building unlocks/upgrades, Dream Orders, Moon Restoration,
+offline earnings, prestige, the **Lunar Codex** (10 permanent prestige upgrades),
+**38 achievements**, **daily login rewards**, **onboarding**, a **statistics**
+screen, **StoreKit 2** purchasing (cosmetic + convenience only), **cosmetic
+themes** that re-skin the app, **local notifications**, a programmatic app icon,
+and a token-based design system — with **119 passing XCTest tests**.
+
+Implementation history lives in PR #1 (Phases 1–4) and PR #2
+(stabilization + this production build-out):
+
+- https://github.com/pri8771/moonloom/pull/1
+- https://github.com/pri8771/moonloom/pull/2
+
+**Economy decision (resolved):** Moonloom uses a single-Moonlight production
+economy (all 12 tiers produce Moonlight); Stardust comes from orders,
+achievements, daily logins, and IAP; Lucid Shards come from prestige. The
+canonical tier *names* are kept. This is the shipped model.
+
+**Remaining for launch:** real App Store Connect product setup + sandbox-device
+IAP testing, final audio/art assets, device-matrix + accessibility QA,
+Instruments profiling, and TestFlight.
+
+Notion build hub:
+https://app.notion.com/p/38eab1f2276581959e1ecc46b07557de
+
+See `docs/CURRENT_STATUS.md` for the latest engineering status.
+
+---
+
 ## 📂 Repository Structure
 
 ```
-codex_app_3/
+moonloom/
+├── MoonloomApp.xcodeproj
+├── MoonloomApp/
+│   ├── App/
+│   ├── Core/
+│   ├── Features/
+│   ├── Presentation/
+│   ├── Resources/
+│   └── Services/
+├── MoonloomTests/
 ├── README.md
+├── project.yml
 └── docs/
     ├── prd/
     │   ├── TECHNICAL_PRD.md
@@ -110,6 +154,7 @@ codex_app_3/
     │   └── INVESTOR_DECK_PRD.md
     ├── PROJECT_TRACKER.md
     ├── BUG_TRACKER.md
+    ├── CURRENT_STATUS.md
     └── PROMPT_LOG.md
 ```
 

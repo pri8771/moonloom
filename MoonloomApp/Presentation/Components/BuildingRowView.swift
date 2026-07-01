@@ -62,7 +62,7 @@ struct BuildingRowView: View {
                 Text(tier.summary)
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 if count > 0 {
                     Text("+\(formatter.string(from: outputPerSecond)) Moonlight/s")
                         .font(.caption2.weight(.medium))
@@ -161,10 +161,12 @@ struct BuildingRowView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canUnlock)
+                .accessibilityLabel("Unlock \(tier.name) for \(formatter.string(from: tier.unlockCost)) Moonlight")
             }
         }
         .padding(.vertical, 6)
         .opacity(previousUnlocked ? 0.95 : 0.6)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(tier.name), locked.")
     }
 }
